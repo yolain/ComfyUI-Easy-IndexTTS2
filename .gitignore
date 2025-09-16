@@ -8,5 +8,4 @@ __pycache__
 .github/instructions/**
 .github/prompt/**
 mmb-preset.custom.txt
-config.yaml
 node.tar.gz
