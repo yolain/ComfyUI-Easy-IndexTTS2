@@ -1,6 +1,6 @@
 # ComfyUI Easy IndexTTS2
 
-> \[!免责声明]\
+> [!IMPORTANT]
 > 本项目及其内容按 “原样 ”提供，不作任何明示或暗示的保证，包括但不限于适销性、特定用途适用性和非侵权保证。在任何情况下，作者或其他版权所有者均不对因本软件或本软件的使用或其他交易而产生、引起或与之相关的任何索赔、损害或其他责任承担责任，无论是合同诉讼、侵权诉讼还是其他诉讼。<br>
 本项目严禁用于任何非法目的以及与侵犯版权相关的任何行为, 用户应自行负责确保在使用本软件或发布由本软件生成的内容时，遵守所在司法管辖区的所有适用法律和法规。作者和版权所有者不对用户在其各自所在地违反法律或法规的行为负责。
 
@@ -139,19 +139,19 @@ ComfyUI/models/IndexTTS-2/
 
 1. 基础单音色克隆
 
-https://github.com/user-attachments/assets/ad18b548-9617-42cd-b086-1bab5e32dbea
+![图片1](https://github.com/user-attachments/assets/ad18b548-9617-42cd-b086-1bab5e32dbea)
 
 2. 以情感为主，进行多段参考克隆
 
-https://github.com/user-attachments/assets/aec59a37-ea53-45c5-9639-5ba8560be378
+![图片2](https://github.com/user-attachments/assets/aec59a37-ea53-45c5-9639-5ba8560be378)
 
-https://github.com/user-attachments/files/22367059/ComfyUI_00001_.mp3
+<video src=https://github.com/user-attachments/files/22367059/ComfyUI_00001_.mp3></video>
 
 3. 以音色为主，进行多段参考克隆
 
-https://github.com/user-attachments/assets/dea5238a-face-44e9-ad90-115bc1b8bba9
+![图片3](https://github.com/user-attachments/assets/dea5238a-face-44e9-ad90-115bc1b8bba9)
 
-https://github.com/user-attachments/assets/7a73fbb8-db9d-42d9-8882-2079904675f2
+![图片4](https://github.com/user-attachments/assets/7a73fbb8-db9d-42d9-8882-2079904675f2)
 
 
 # 来源
