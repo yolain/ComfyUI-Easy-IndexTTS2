@@ -263,7 +263,7 @@ class DownloadAndLoadIndexTTSModel(io.ComfyNode):
                                         subfolder=dir_subfolder if dir_subfolder else None
                                     )
 
-                                temp_download_dir = os.path.join(model_root_dir, model_id.replace('.','___'), dir_name) if dir_subfolder else os.path.join(model_root_dir, model_id.replace('.','___'))
+                                temp_download_dir = os.path.join(model_root_dir, model_id, dir_name) if dir_subfolder else os.path.join(model_root_dir, model_id)
                                 shutil.move(temp_download_dir, final_target_path)
                                 print(f"Downloaded and moved {model_name} to {final_target_path}")
 
@@ -279,8 +279,6 @@ class DownloadAndLoadIndexTTSModel(io.ComfyNode):
             #     cls.hidden.unique_id
             # )
             return io.NodeOutput(engine)
-        except FileNotFoundError:
-            raise Exception("config.yaml not found. Please check the file path.")
         except yaml.YAMLError:
             raise Exception("Error parsing config.yaml. Please check the YAML syntax.")
         except Exception as e:
