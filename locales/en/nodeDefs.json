@@ -1,0 +1,330 @@
+{
+  "easy downloadIndexTTSAndLoadModel": {
+    "display_name": "IndexTTS Model Loader",
+    "inputs": {
+      "model": {
+        "name": "Model"
+      },
+      "download_from": {
+        "name": "Download From"
+      },
+      "start": {
+        "name": "Start",
+        "tooltip": "Start to load or download models"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "IndexTTS Model"
+      }
+    }
+  },
+  "easy indexTTSGenerate": {
+    "display_name": "IndexTTS Generate",
+    "inputs": {
+      "indextts_model": {
+        "name": "IndexTTS Model"
+      },
+      "reference_audio": {
+        "name": "Reference Audio",
+        "tooltip": "Reference audio for voice cloning (Only the one voice is supported)"
+      },
+      "reference_audios": {
+        "name": "Reference Audios",
+        "tooltip": "(Optional) Reference audios for voice cloning (Multiple voices are supported)"
+      },
+      "emotions": {
+        "name": "Emotions",
+        "tooltip": "(Optional) voice emotions"
+      },
+      "text": {
+        "name": "Text",
+        "tooltip": "Text to synthesize. Supports pause format: -2s- (2 seconds pause), -0.5s- (0.5 seconds pause)"
+      },
+      "unload_model": {
+        "name": "Unload Model",
+        "tooltip": "Unload model from VRAM after synthesis"
+      },
+      "do_sample": {
+        "name": "Do Sample"
+      },
+      "temperature": {
+        "name": "Temperature"
+      },
+      "top_p": {
+        "name": "Top P"
+      },
+      "top_k": {
+        "name": "Top K"
+      },
+      "num_beams": {
+        "name": "Num Beams"
+      },
+      "repetition_penalty": {
+        "name": "Repetition Penalty"
+      },
+      "length_penalty": {
+        "name": "Length Penalty"
+      },
+      "max_mel_tokens": {
+        "name": "Max Mel Tokens"
+      },
+      "max_tokens_per_sentence": {
+        "name": "Max Tokens Per Sentence"
+      },
+      "seed": {
+        "name": "Seed"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Audio"
+      },
+      "1": {
+        "name": "Seed"
+      },
+      "2": {
+        "name": "Subtitle"
+      }
+    }
+  },
+  "easy indexTTSGenerateSimple": {
+    "display_name": "IndexTTS Generate Simple",
+    "inputs": {
+      "indextts_model": {
+        "name": "IndexTTS Model"
+      },
+      "reference_audio": {
+        "name": "Reference Audio",
+        "tooltip": "Reference audio for voice cloning"
+      },
+      "reference_audios": {
+        "name": "Reference Audios",
+        "tooltip": "(Optional) Reference audios for voice cloning (Multiple voices are supported)"
+      },
+      "emotions": {
+        "name": "Emotions",
+        "tooltip": "(Optional) voice emotions"
+      },
+      "text": {
+        "name": "Text",
+        "tooltip": "Text to synthesize. When using emotions or reference audios, supports pause format: -2s- (2 seconds pause), -0.5s- (0.5 seconds pause)"
+      },
+      "unload_model": {
+        "name": "Unload Model",
+        "tooltip": "Unload model from VRAM after synthesis"
+      },
+      "seed": {
+        "name": "Seed"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Audio"
+      },
+      "1": {
+        "name": "Seed"
+      },
+      "2": {
+        "name": "Subtitle"
+      }
+    }
+  },
+  "easy indexTTSEmotionVector": {
+    "display_name": "Voice Emotion Vector",
+    "inputs": {
+      "reference_audio": {
+        "name": "Reference Audio",
+        "tooltip": "Reference audio"
+      },
+      "voice_name": {
+        "name": "Voice Name",
+        "tooltip": "Voice name (If empty, it will be defined as s1, s2..., according to the order of batch combinations)"
+      },
+      "use_random": {
+        "name": "Random Emotion",
+        "tooltip": "Generate a random emotion sampling"
+      },
+      "Happy": {
+        "name": "Happy"
+      },
+      "Angry": {
+        "name": "Angry"
+      },
+      "Sad": {
+        "name": "Sad"
+      },
+      "Fear": {
+        "name": "Fear"
+      },
+      "Hate": {
+        "name": "Hate"
+      },
+      "Low": {
+        "name": "Low"
+      },
+      "Surprise": {
+        "name": "Surprise"
+      },
+      "Neutral": {
+        "name": "Neutral"
+      }
+    },
+    "outputs": {
+      "emotions": {
+        "name": "Emotions"
+      }
+    }
+  },
+  "easy indexTTSEmotionAudio": {
+    "display_name": "Voice Emotion Audio",
+    "inputs": {
+      "reference_audio": {
+        "name": "Reference Audio",
+        "tooltip": "Reference audio"
+      },
+      "voice_name": {
+        "name": "Voice Name",
+        "tooltip": "Voice name (If empty, it will be defined as s1, s2..., according to the order of batch combinations)"
+      },
+      "emotion_ref_audio": {
+        "name": "Emotion Reference Audio",
+        "tooltip": "Reference audio for voice emotions"
+      },
+      "emo_weight": {
+        "name": "Emotion Weight",
+        "tooltip": "Weight for the emotion reference audio"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Emotions"
+      }
+    }
+  },
+  "easy indexTTSEmotionText": {
+    "display_name": "Voice Emotion Text",
+    "inputs": {
+      "reference_audio": {
+        "name": "Reference Audio",
+        "tooltip": "Reference audio"
+      },
+      "voice_name": {
+        "name": "Voice Name",
+        "tooltip": "Voice name (If empty, it will be defined as s1, s2..., according to the order of batch combinations)"
+      },
+      "description": {
+        "name": "Emotion Description"
+      },
+      "use_random": {
+        "name": "Random Emotion",
+        "tooltip": "Generate a random emotion sampling"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Emotions"
+      }
+    }
+  },
+  "easy indexTTSEmotionMerge": {
+    "display_name": "Merge Voice Emotions",
+    "inputs": {
+      "emotion1": {
+        "name": "Emotion 1",
+        "tooltip": "voice emotion 1"
+      },
+      "emotion2": {
+        "name": "Emotion 2",
+        "tooltip": "(Optional) voice emotion 2"
+      },
+      "emotion3": {
+        "name": "Emotion 3",
+        "tooltip": "(Optional) voice emotion 3"
+      },
+      "emotion4": {
+        "name": "Emotion 4",
+        "tooltip": "(Optional) voice emotion 4"
+      },
+      "emotion5": {
+        "name": "Emotion 5",
+        "tooltip": "(Optional) voice emotion 5"
+      },
+      "emotion6": {
+        "name": "Emotion 6",
+        "tooltip": "(Optional) voice emotion 6"
+      },
+      "emotion7": {
+        "name": "Emotion 7",
+        "tooltip": "(Optional) voice emotion 7"
+      },
+      "emotion8": {
+        "name": "Emotion 8",
+        "tooltip": "(Optional) voice emotion 8"
+      },
+      "emotion9": {
+        "name": "Emotion 9",
+        "tooltip": "(Optional) voice emotion 9"
+      },
+      "emotion10": {
+        "name": "Emotion 10",
+        "tooltip": "(Optional) voice emotion 10"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Emotions"
+      }
+    }
+  },
+  "easy indexTTSAudioMerge": {
+    "display_name": "Merge Voice Audios",
+    "inputs": {
+      "audio1": {
+        "name": "Audio 1",
+        "tooltip": "voice audio 1"
+      },
+      "audio2": {
+        "name": "Audio 2",
+        "tooltip": "(Optional) voice audio 2"
+      },
+      "audio3": {
+        "name": "Audio 3",
+        "tooltip": "(Optional) voice audio 3"
+      },
+      "audio4": {
+        "name": "Audio 4",
+        "tooltip": "(Optional) voice audio 4"
+      },
+      "audio5": {
+        "name": "Audio 5",
+        "tooltip": "(Optional) voice audio 5"
+      },
+      "audio6": {
+        "name": "Audio 6",
+        "tooltip": "(Optional) voice audio 6"
+      },
+      "audio7": {
+        "name": "Audio 7",
+        "tooltip": "(Optional) voice audio 7"
+      },
+      "audio8": {
+        "name": "Audio 8",
+        "tooltip": "(Optional) voice audio 8"
+      },
+      "audio9": {
+        "name": "Audio 9",
+        "tooltip": "(Optional) voice audio 9"
+      },
+      "audio10": {
+        "name": "Audio 10",
+        "tooltip": "(Optional) voice audio 10"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Audios"
+      }
+    }
+  }
+}

@@ -1,0 +1,354 @@
+{
+  "id": "14d8043e-6c9a-49f0-932f-92d456961a5c",
+  "revision": 0,
+  "last_node_id": 45,
+  "last_link_id": 70,
+  "nodes": [
+    {
+      "id": 26,
+      "type": "easy downloadIndexTTSAndLoadModel",
+      "pos": [
+        -509.6731872558594,
+        24.716999053955078
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "start",
+          "shape": 7,
+          "type": "*",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "indextts_model",
+          "type": "EASY_INDEXTTS_MODEL",
+          "links": [
+            40
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "easy downloadIndexTTSAndLoadModel"
+      },
+      "widgets_values": [
+        "IndexTTS-2",
+        "modelscope"
+      ]
+    },
+    {
+      "id": 36,
+      "type": "LoadAudio",
+      "pos": [
+        -526.3558959960938,
+        406.5851745605469
+      ],
+      "size": [
+        270,
+        136
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            53
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadAudio"
+      },
+      "widgets_values": [
+        "周杰伦_.flac",
+        null,
+        null
+      ]
+    },
+    {
+      "id": 35,
+      "type": "easy indexTTSAudioMerge",
+      "pos": [
+        -208.33145141601562,
+        252.65994262695312
+      ],
+      "size": [
+        140,
+        206
+      ],
+      "flags": {
+        "collapsed": false
+      },
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "audio1",
+          "type": "AUDIO",
+          "link": 52
+        },
+        {
+          "name": "audio2",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": 53
+        },
+        {
+          "name": "audio3",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": null
+        },
+        {
+          "name": "audio4",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": null
+        },
+        {
+          "name": "audio5",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": null
+        },
+        {
+          "name": "audio6",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": null
+        },
+        {
+          "name": "audio7",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": null
+        },
+        {
+          "name": "audio8",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": null
+        },
+        {
+          "name": "audio9",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": null
+        },
+        {
+          "name": "audio10",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "audios",
+          "type": "AUDIOS",
+          "links": [
+            51
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "easy indexTTSAudioMerge"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 29,
+      "type": "LoadAudio",
+      "pos": [
+        -509.4990234375,
+        190.86863708496094
+      ],
+      "size": [
+        270,
+        136
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            52
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadAudio"
+      },
+      "widgets_values": [
+        "蔡徐坤.wav",
+        null,
+        null
+      ]
+    },
+    {
+      "id": 27,
+      "type": "easy indexTTSGenerateSimple",
+      "pos": [
+        -8.290172576904297,
+        162.1630859375
+      ],
+      "size": [
+        269.45025634765625,
+        301.7021484375
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "indextts_model",
+          "type": "EASY_INDEXTTS_MODEL",
+          "link": 40
+        },
+        {
+          "name": "reference_audio",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": null
+        },
+        {
+          "name": "reference_audios",
+          "shape": 7,
+          "type": "AUDIOS",
+          "link": 51
+        },
+        {
+          "name": "emotions",
+          "shape": 7,
+          "type": "EASY_INDEXTTS_EMOTIONS",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": [
+            70
+          ]
+        },
+        {
+          "name": "seed",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "subtitle",
+          "type": "STRING",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "easy indexTTSGenerateSimple"
+      },
+      "widgets_values": [
+        "[s2] 唉，兄弟，你篮球打得不错噢！\n[s1] 当然了，我练习时长两年半的！\n-0.5s-\n[s2] 明天和我拍个大灌篮2吧！\n[s1] 你还是请我喝mojito吧！  ",
+        false,
+        4242950409,
+        "fixed"
+      ]
+    },
+    {
+      "id": 45,
+      "type": "PreviewAudio",
+      "pos": [
+        311.5313415527344,
+        276.40576171875
+      ],
+      "size": [
+        270,
+        88
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 70
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewAudio"
+      },
+      "widgets_values": []
+    }
+  ],
+  "links": [
+    [
+      40,
+      26,
+      0,
+      27,
+      0,
+      "EASY_INDEXTTS_MODEL"
+    ],
+    [
+      51,
+      35,
+      0,
+      27,
+      2,
+      "AUDIOS"
+    ],
+    [
+      52,
+      29,
+      0,
+      35,
+      0,
+      "AUDIO"
+    ],
+    [
+      53,
+      36,
+      0,
+      35,
+      1,
+      "AUDIO"
+    ],
+    [
+      70,
+      27,
+      0,
+      45,
+      0,
+      "AUDIO"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 1.257872205620652,
+      "offset": [
+        730.0993468247076,
+        142.39417161911214
+      ]
+    },
+    "frontendVersion": "1.27.4"
+  },
+  "version": 0.4
+}

@@ -1,0 +1,497 @@
+{
+  "id": "14d8043e-6c9a-49f0-932f-92d456961a5c",
+  "revision": 0,
+  "last_node_id": 53,
+  "last_link_id": 79,
+  "nodes": [
+    {
+      "id": 26,
+      "type": "easy downloadIndexTTSAndLoadModel",
+      "pos": [
+        -600.708984375,
+        134.4757080078125
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "start",
+          "shape": 7,
+          "type": "*",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "indextts_model",
+          "type": "EASY_INDEXTTS_MODEL",
+          "links": [
+            40
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "easy downloadIndexTTSAndLoadModel"
+      },
+      "widgets_values": [
+        "IndexTTS-2",
+        "modelscope"
+      ]
+    },
+    {
+      "id": 29,
+      "type": "LoadAudio",
+      "pos": [
+        -598.5506591796875,
+        306.1302185058594
+      ],
+      "size": [
+        270,
+        136
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            74
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadAudio"
+      },
+      "widgets_values": [
+        "林黛玉.wav",
+        null,
+        null
+      ]
+    },
+    {
+      "id": 48,
+      "type": "LoadAudio",
+      "pos": [
+        -588.5345458984375,
+        525.4810180664062
+      ],
+      "size": [
+        270,
+        136
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            78
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadAudio"
+      },
+      "widgets_values": [
+        "徐志胜.wav",
+        null,
+        null
+      ]
+    },
+    {
+      "id": 47,
+      "type": "easy indexTTSEmotionVector",
+      "pos": [
+        -283.0648498535156,
+        211.82199096679688
+      ],
+      "size": [
+        258.3111267089844,
+        274
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "reference_audio",
+          "type": "AUDIO",
+          "link": 74
+        }
+      ],
+      "outputs": [
+        {
+          "name": "emotions",
+          "type": "EASY_INDEXTTS_EMOTIONS",
+          "links": [
+            75
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "easy indexTTSEmotionVector"
+      },
+      "widgets_values": [
+        "小林",
+        false,
+        0,
+        0,
+        0.75,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": 49,
+      "type": "easy indexTTSEmotionMerge",
+      "pos": [
+        -0.7892463207244873,
+        462.60809326171875
+      ],
+      "size": [
+        157.681640625,
+        206
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "emotion1",
+          "type": "EASY_INDEXTTS_EMOTIONS",
+          "link": 75
+        },
+        {
+          "name": "emotion2",
+          "shape": 7,
+          "type": "EASY_INDEXTTS_EMOTIONS",
+          "link": 77
+        },
+        {
+          "name": "emotion3",
+          "shape": 7,
+          "type": "EASY_INDEXTTS_EMOTIONS",
+          "link": null
+        },
+        {
+          "name": "emotion4",
+          "shape": 7,
+          "type": "EASY_INDEXTTS_EMOTIONS",
+          "link": null
+        },
+        {
+          "name": "emotion5",
+          "shape": 7,
+          "type": "EASY_INDEXTTS_EMOTIONS",
+          "link": null
+        },
+        {
+          "name": "emotion6",
+          "shape": 7,
+          "type": "EASY_INDEXTTS_EMOTIONS",
+          "link": null
+        },
+        {
+          "name": "emotion7",
+          "shape": 7,
+          "type": "EASY_INDEXTTS_EMOTIONS",
+          "link": null
+        },
+        {
+          "name": "emotion8",
+          "shape": 7,
+          "type": "EASY_INDEXTTS_EMOTIONS",
+          "link": null
+        },
+        {
+          "name": "emotion9",
+          "shape": 7,
+          "type": "EASY_INDEXTTS_EMOTIONS",
+          "link": null
+        },
+        {
+          "name": "emotion10",
+          "shape": 7,
+          "type": "EASY_INDEXTTS_EMOTIONS",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "emotions",
+          "type": "EASY_INDEXTTS_EMOTIONS",
+          "links": [
+            76
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "easy indexTTSEmotionMerge"
+      }
+    },
+    {
+      "id": 53,
+      "type": "LoadAudio",
+      "pos": [
+        -585.3672485351562,
+        723.1610107421875
+      ],
+      "size": [
+        270,
+        136
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            79
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadAudio"
+      },
+      "widgets_values": [
+        "哪吒 低迷.wav",
+        null,
+        ""
+      ]
+    },
+    {
+      "id": 27,
+      "type": "easy indexTTSGenerateSimple",
+      "pos": [
+        188.62278747558594,
+        384.99090576171875
+      ],
+      "size": [
+        269.45025634765625,
+        301.7021484375
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "indextts_model",
+          "type": "EASY_INDEXTTS_MODEL",
+          "link": 40
+        },
+        {
+          "name": "reference_audio",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": null
+        },
+        {
+          "name": "reference_audios",
+          "shape": 7,
+          "type": "AUDIOS",
+          "link": null
+        },
+        {
+          "name": "emotions",
+          "shape": 7,
+          "type": "EASY_INDEXTTS_EMOTIONS",
+          "link": 76
+        }
+      ],
+      "outputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": [
+            70
+          ]
+        },
+        {
+          "name": "seed",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "subtitle",
+          "type": "STRING",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "easy indexTTSGenerateSimple"
+      },
+      "widgets_values": [
+        "[小林] 你是来拉屎的吧！\n-0.5s-\n[小胜] 小爷我，想在哪拉就在哪拉！",
+        false,
+        4242950409,
+        "fixed"
+      ]
+    },
+    {
+      "id": 52,
+      "type": "easy indexTTSEmotionAudio",
+      "pos": [
+        -276.21099853515625,
+        604.33740234375
+      ],
+      "size": [
+        258.3111267089844,
+        102
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "reference_audio",
+          "type": "AUDIO",
+          "link": 78
+        },
+        {
+          "name": "emotion_ref_audio",
+          "type": "AUDIO",
+          "link": 79
+        }
+      ],
+      "outputs": [
+        {
+          "name": "emotions",
+          "type": "EASY_INDEXTTS_EMOTIONS",
+          "links": [
+            77
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "easy indexTTSEmotionAudio"
+      },
+      "widgets_values": [
+        "小胜",
+        0.5
+      ]
+    },
+    {
+      "id": 45,
+      "type": "PreviewAudio",
+      "pos": [
+        482.6163330078125,
+        493.7060546875
+      ],
+      "size": [
+        270,
+        88
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 70
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewAudio"
+      },
+      "widgets_values": []
+    }
+  ],
+  "links": [
+    [
+      40,
+      26,
+      0,
+      27,
+      0,
+      "EASY_INDEXTTS_MODEL"
+    ],
+    [
+      70,
+      27,
+      0,
+      45,
+      0,
+      "AUDIO"
+    ],
+    [
+      74,
+      29,
+      0,
+      47,
+      0,
+      "AUDIO"
+    ],
+    [
+      75,
+      47,
+      0,
+      49,
+      0,
+      "EASY_INDEXTTS_EMOTIONS"
+    ],
+    [
+      76,
+      49,
+      0,
+      27,
+      3,
+      "EASY_INDEXTTS_EMOTIONS"
+    ],
+    [
+      77,
+      52,
+      0,
+      49,
+      1,
+      "EASY_INDEXTTS_EMOTIONS"
+    ],
+    [
+      78,
+      48,
+      0,
+      52,
+      0,
+      "AUDIO"
+    ],
+    [
+      79,
+      53,
+      0,
+      52,
+      1,
+      "AUDIO"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 1.257872205620652,
+      "offset": [
+        718.9911784530991,
+        -11.83453232484515
+      ]
+    },
+    "frontendVersion": "1.27.4"
+  },
+  "version": 0.4
+}

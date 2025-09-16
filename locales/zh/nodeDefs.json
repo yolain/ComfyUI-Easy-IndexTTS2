@@ -1,0 +1,331 @@
+{
+  "easy downloadIndexTTSAndLoadModel": {
+    "display_name": "IndexTTS 模型加载器",
+    "inputs": {
+      "model": {
+        "name": "模型"
+      },
+      "download_from": {
+        "name": "下载来源"
+      },
+      "start": {
+        "name": "开始",
+        "tooltip": "开始加载或下载模型"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "IndexTTS 模型"
+      }
+    }
+  },
+  "easy indexTTSGenerate": {
+    "display_name": "IndexTTS 生成",
+    "inputs": {
+      "indextts_model": {
+        "name": "IndexTTS 模型"
+      },
+      "reference_audio": {
+        "name": "参考音频",
+        "tooltip": "用于语音克隆的参考音频（仅支持单音色）"
+      },
+      "reference_audios": {
+        "name": "参考音频组",
+        "tooltip": "（可选）用于语音克隆的参考音频组（支持多音色）"
+      },
+      "emotions": {
+        "name": "情感配置",
+        "tooltip": "（可选）音色情感配置"
+      },
+      "text": {
+        "name": "文本",
+        "tooltip": "要合成的文本。支持停顿格式：-2s-（2秒停顿），-0.5s-（0.5秒停顿）",
+        "placeholder": "合成文本段落\n1.使用参考音频时，仅支持传统文本输入\n2.使用参考音频组时，支持: \n[s1：开心]你好啊！\n-0.5s-\n[s2：愤怒]我不想和你说话！\n-2s-\n[s1：平静]那好吧，再见！\n3.使用情感配置时，支持音色名称定义，如：[小明] 你是来拉屎的吧！"
+      },
+      "unload_model": {
+        "name": "卸载模型",
+        "tooltip": "合成后从显存中卸载模型"
+      },
+      "do_sample": {
+        "name": "随机采样"
+      },
+      "temperature": {
+        "name": "温度"
+      },
+      "top_p": {
+        "name": "Top P"
+      },
+      "top_k": {
+        "name": "Top K"
+      },
+      "num_beams": {
+        "name": "束搜索数量"
+      },
+      "repetition_penalty": {
+        "name": "重复惩罚"
+      },
+      "length_penalty": {
+        "name": "长度惩罚"
+      },
+      "max_mel_tokens": {
+        "name": "最大音频令牌"
+      },
+      "max_tokens_per_sentence": {
+        "name": "每句最大令牌"
+      },
+      "seed": {
+        "name": "随机种子"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "音频"
+      },
+      "1": {
+        "name": "随机种子"
+      },
+      "2": {
+        "name": "字幕"
+      }
+    }
+  },
+  "easy indexTTSGenerateSimple": {
+    "display_name": "IndexTTS 简单生成",
+    "inputs": {
+      "indextts_model": {
+        "name": "IndexTTS 模型"
+      },
+      "reference_audio": {
+        "name": "参考音频",
+        "tooltip": "用于语音克隆的参考音频"
+      },
+      "reference_audios": {
+        "name": "参考音频组",
+        "tooltip": "（可选）用于语音克隆的参考音频组（支持多音色）"
+      },
+      "emotions": {
+        "name": "情感配置",
+        "tooltip": "（可选）音色情感配置"
+      },
+      "text": {
+        "name": "文本",
+        "tooltip": "要合成的文本。当使用多音色文本段落时，支持停顿格式：-2s-（2秒停顿），-0.5s-（0.5秒停顿）"
+      },
+      "unload_model": {
+        "name": "卸载模型",
+        "tooltip": "合成后从显存中卸载模型"
+      },
+      "seed": {
+        "name": "随机种子"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "音频"
+      },
+      "1": {
+        "name": "随机种子"
+      },
+      "2": {
+        "name": "字幕"
+      }
+    }
+  },
+  "easy indexTTSEmotionVector": {
+    "display_name": "音色情感向量",
+    "inputs": {
+      "reference_audio": {
+        "name": "参考音频",
+        "tooltip": "参考音频"
+      },
+      "voice_name": {
+        "name": "音色名称",
+        "tooltip": "音色名称（如果为空，将按批次合并顺序定义为s1、s2...）"
+      },
+      "use_random": {
+        "name": "随机情感",
+        "tooltip": "生成随机情感采样"
+      },
+      "Happy": {
+        "name": "高兴"
+      },
+      "Angry": {
+        "name": "愤怒"
+      },
+      "Sad": {
+        "name": "悲伤"
+      },
+      "Fear": {
+        "name": "恐惧"
+      },
+      "Hate": {
+        "name": "反感"
+      },
+      "Low": {
+        "name": "低落"
+      },
+      "Surprise": {
+        "name": "惊讶"
+      },
+      "Neutral": {
+        "name": "自然"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "情感配置"
+      }
+    }
+  },
+  "easy indexTTSEmotionAudio": {
+    "display_name": "音色情感音频",
+    "inputs": {
+      "reference_audio": {
+        "name": "参考音频",
+        "tooltip": "参考音频"
+      },
+      "voice_name": {
+        "name": "音色名称",
+        "tooltip": "音色名称（如果为空，将按批次合并顺序定义为s1、s2...）"
+      },
+      "emotion_ref_audio": {
+        "name": "情感参考音频",
+        "tooltip": "音色情感的参考音频"
+      },
+      "emo_weight": {
+        "name": "情感权重",
+        "tooltip": "情感参考音频的权重"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "情感配置"
+      }
+    }
+  },
+  "easy indexTTSEmotionText": {
+    "display_name": "音色情感文本",
+    "inputs": {
+      "reference_audio": {
+        "name": "参考音频",
+        "tooltip": "参考音频"
+      },
+      "voice_name": {
+        "name": "音色名称",
+        "tooltip": "音色名称（如果为空，将按批次合并顺序定义为s1、s2...）"
+      },
+      "description": {
+        "name": "情感描述"
+      },
+      "use_random": {
+        "name": "随机情感",
+        "tooltip": "生成随机情感采样"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "情感配置"
+      }
+    }
+  },
+  "easy indexTTSEmotionMerge": {
+    "display_name": "合并音色情感",
+    "inputs": {
+      "emotion1": {
+        "name": "情感配置 1",
+        "tooltip": "音色情感配置 1"
+      },
+      "emotion2": {
+        "name": "情感配置 2",
+        "tooltip": "（可选）音色情感配置 2"
+      },
+      "emotion3": {
+        "name": "情感配置 3",
+        "tooltip": "（可选）音色情感配置 3"
+      },
+      "emotion4": {
+        "name": "情感配置 4",
+        "tooltip": "（可选）音色情感配置 4"
+      },
+      "emotion5": {
+        "name": "情感配置 5",
+        "tooltip": "（可选）音色情感配置 5"
+      },
+      "emotion6": {
+        "name": "情感配置 6",
+        "tooltip": "（可选）音色情感配置 6"
+      },
+      "emotion7": {
+        "name": "情感配置 7",
+        "tooltip": "（可选）音色情感配置 7"
+      },
+      "emotion8": {
+        "name": "情感配置 8",
+        "tooltip": "（可选）音色情感配置 8"
+      },
+      "emotion9": {
+        "name": "情感配置 9",
+        "tooltip": "（可选）音色情感配置 9"
+      },
+      "emotion10": {
+        "name": "情感配置 10",
+        "tooltip": "（可选）音色情感配置 10"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "情感配置"
+      }
+    }
+  },
+  "easy indexTTSAudioMerge": {
+    "display_name": "合并音色音频",
+    "inputs": {
+      "audio1": {
+        "name": "音频 1",
+        "tooltip": "音色音频 1"
+      },
+      "audio2": {
+        "name": "音频 2",
+        "tooltip": "（可选）音色音频 2"
+      },
+      "audio3": {
+        "name": "音频 3",
+        "tooltip": "（可选）音色音频 3"
+      },
+      "audio4": {
+        "name": "音频 4",
+        "tooltip": "（可选）音色音频 4"
+      },
+      "audio5": {
+        "name": "音频 5",
+        "tooltip": "（可选）音色音频 5"
+      },
+      "audio6": {
+        "name": "音频 6",
+        "tooltip": "（可选）音色音频 6"
+      },
+      "audio7": {
+        "name": "音频 7",
+        "tooltip": "（可选）音色音频 7"
+      },
+      "audio8": {
+        "name": "音频 8",
+        "tooltip": "（可选）音色音频 8"
+      },
+      "audio9": {
+        "name": "音频 9",
+        "tooltip": "（可选）音色音频 9"
+      },
+      "audio10": {
+        "name": "音频 10",
+        "tooltip": "（可选）音色音频 10"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "音频组"
+      }
+    }
+  }
+}
