@@ -34,6 +34,53 @@ class EMOTION_MODE:
     EMO_VECTOR = 2
     EMO_TEXT = 3
 
+# 解析带时间戳的文本格式: (start_time, end_time) text
+def parse_timed_text(line: str) -> Tuple[bool, float, float, str]:
+    """
+    解析格式如 (0.48, 1.56) 什么叫惊喜？
+    返回: (是否匹配, 开始时间, 结束时间, 文本内容)
+    """
+    pattern = r'^\((\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\)\s*(.+)$'
+    match = re.match(pattern, line.strip())
+    if match:
+        start_time = float(match.group(1))
+        end_time = float(match.group(2))
+        text = match.group(3).strip()
+        return True, start_time, end_time, text
+    return False, 0.0, 0.0, ""
+
+# 格式化字幕文本输出
+def format_subtitle_text(subtitles_json: str) -> str:
+    """
+    将JSON格式的字幕转换为文本格式
+    跳过pause，如果有start和end则使用 (start, end) 文本 格式
+    """
+    if not subtitles_json:
+        return ""
+    
+    try:
+        subtitles = json.loads(subtitles_json)
+        formatted_lines = []
+        
+        for item in subtitles:
+            # 跳过停顿
+            if item.get("id") == "pause":
+                continue
+            
+            text = item.get("字幕", "")
+            start = item.get("start")
+            end = item.get("end")
+            
+            # 如果有start和end，使用时间戳格式
+            if start is not None and end is not None:
+                formatted_lines.append(f"({start}, {end}) {text}")
+            else:
+                formatted_lines.append(text)
+        
+        return "\n".join(formatted_lines)
+    except:
+        return ""
+
 # 处理音频输入
 def process_audio_input(audio: io.Audio) -> Tuple[np.ndarray, int]:
     if isinstance(audio, dict) and "waveform" in audio and "sample_rate" in audio:
@@ -313,6 +360,7 @@ class indexTTS2Generate(io.ComfyNode):
                 io.Audio.Output(display_name="audio"),
                 io.Int.Output(display_name="seed"),
                 io.String.Output(display_name="subtitle"),
+                io.String.Output(display_name="subtitle_text"),
             ],
             hidden=[io.Hidden.unique_id]
         )
@@ -340,15 +388,29 @@ class indexTTS2Generate(io.ComfyNode):
                 if vc_name not in voice_order:
                     voice_order.append(vc_name)
             
-            # 解析文本格式 [voice_name] 对话内容
+            # 解析文本格式 [voice_name] 对话内容 或 (start_time, end_time) 对话内容
             lines = text.split('\n')
             segments = []
             current_char = None
             current_text = ""
-            
             for line in lines:
                 line = line.strip()
                 if not line:
+                    continue
+                
+                # 检查是否是带时间戳的格式 (start, end) text
+                is_timed, start_time, end_time, timed_text = parse_timed_text(line)
+                if is_timed:
+                    # 保存之前的片段
+                    if current_char and current_text.strip():
+                        segments.append((current_char, current_text.strip(), None, None, None))
+                        current_char = None
+                        current_text = ""
+                    
+                    # 使用第一个音色或当前音色
+                    char_for_timed = current_char if current_char else (voice_order[0] if voice_order else "s1")
+                    target_duration = end_time - start_time
+                    segments.append((char_for_timed, timed_text, start_time, end_time, target_duration))
                     continue
                 
                 # 检查是否是停顿标识 -Xs- (X可以是整数或浮点数)
@@ -356,20 +418,20 @@ class indexTTS2Generate(io.ComfyNode):
                 if pause_match:
                     # 保存之前的片段
                     if current_char and current_text.strip():
-                        segments.append((current_char, current_text.strip()))
+                        segments.append((current_char, current_text.strip(), None, None, None))
                         current_char = None
                         current_text = ""
                     
                     # 添加停顿片段
                     pause_duration = float(pause_match.group(1))
-                    segments.append(("__PAUSE__", pause_duration))
+                    segments.append(("__PAUSE__", pause_duration, None, None, None))
                     continue
                     
                 # 检查是否是音色标识行 [voice_name]
                 if line.startswith('[') and ']' in line:
                     # 保存之前的片段
                     if current_char and current_text.strip():
-                        segments.append((current_char, current_text.strip()))
+                        segments.append((current_char, current_text.strip(), None, None, None))
                     
                     # 提取角色名
                     end_bracket = line.find(']')
@@ -380,12 +442,28 @@ class indexTTS2Generate(io.ComfyNode):
             
             # 保存最后一个片段
             if current_char and current_text.strip():
-                segments.append((current_char, current_text.strip()))
+                segments.append((current_char, current_text.strip(), None, None, None))
             
             # 如果没有找到音色标识，使用默认第一个音色
             if not segments and text.strip():
                 default_char = voice_order[0] if voice_order else "s1"
-                segments = [(default_char, text.strip())]
+                segments = [(default_char, text.strip(), None, None, None)]
+            
+            # 为时间戳格式自动添加停顿
+            processed_segments = []
+            last_end_time = 0.0
+            for segment in segments:
+                if len(segment) >= 5 and segment[2] is not None:  # 带时间戳的片段
+                    start_time = segment[2]
+                    # 如果开始时间大于上一个结束时间，添加停顿
+                    if start_time > last_end_time:
+                        pause_duration = start_time - last_end_time
+                        processed_segments.append(("__PAUSE__", pause_duration, None, None, None))
+                    processed_segments.append(segment)
+                    last_end_time = segment[3]  # 更新最后的结束时间
+                else:
+                    processed_segments.append(segment)
+            segments = processed_segments
             
             # 生成每个片段的音频
             all_waves = []
@@ -400,8 +478,8 @@ class indexTTS2Generate(io.ComfyNode):
             pbar = comfy.utils.ProgressBar(len(segments))
             
             for segment_idx, segment in enumerate(segments):
-                if len(segment) == 2 and segment[0] == "__PAUSE__":
-                    # 处理停顿
+                # 处理停顿
+                if len(segment) >= 2 and segment[0] == "__PAUSE__":
                     pause_duration = segment[1]
                     # 如果还没有采样率信息，使用默认值22050
                     sample_rate = current_sr if current_sr is not None else 22050
@@ -420,7 +498,12 @@ class indexTTS2Generate(io.ComfyNode):
                     current_time += pause_duration
                     continue
                 
-                vc_name, segment_text = segment
+                # 解包segment
+                vc_name, segment_text = segment[0], segment[1]
+                start_time_target = segment[2] if len(segment) > 2 else None
+                end_time_target = segment[3] if len(segment) > 3 else None
+                target_duration = segment[4] if len(segment) > 4 else None
+                
                 # 查找对应的音色情感配置
                 if vc_name not in voice_map:
                     # 如果音色名不存在，使用第一个可用音色
@@ -455,8 +538,50 @@ class indexTTS2Generate(io.ComfyNode):
                 elif emo_mode == EMOTION_MODE.EMO_VECTOR:
                     emo_vector_param = emotion_data.get("emo_vector")
 
-                print(f"Generating for voice: {vc_name}, Text: {segment_text[:30]}..., EmoMode: {emo_mode}, emo_text_param: {emo_text_param}")
-                # 生成单个片段的音频
+                # 确定语速
+                adjusted_speech_speed = speech_speed
+                if target_duration is not None:
+                    # 带时间戳的片段：先用默认速度生成，然后计算需要的语速调整
+                    print(f"Generating timed segment for voice: {vc_name}, Text: {segment_text}, Target duration: {target_duration:.2f}s")
+                    
+                    # 第一次生成用于估算
+                    sr_temp, wave_temp, _ = indextts_model.generate(
+                        text=segment_text, 
+                        reference_audio=ref_audio, 
+                        mode="Auto",
+                        do_sample=do_sample, 
+                        temperature=temperature, 
+                        top_p=top_p, 
+                        top_k=top_k, 
+                        num_beams=num_beams,
+                        repetition_penalty=repetition_penalty, 
+                        length_penalty=length_penalty,
+                        max_mel_tokens=max_mel_tokens, 
+                        max_tokens_per_sentence=max_tokens_per_sentence,
+                        speech_speed=speech_speed,
+                        emo_text=emo_text_param,
+                        emo_ref_audio=emo_ref_audio_param, 
+                        emo_vector=emo_vector_param, 
+                        emo_weight=emo_weight_param,
+                        seed=seed, 
+                        return_subtitles=False, 
+                        use_random=use_random_param,
+                        use_qwen=use_qwen
+                    )
+                    
+                    # 计算实际时长
+                    actual_duration = len(wave_temp) / float(sr_temp)
+                    
+                    # 计算调整后的语速
+                    if actual_duration > 0 and target_duration > 0:
+                        adjusted_speech_speed = speech_speed * (actual_duration / target_duration)
+                        # 限制语速范围在合理区间
+                        adjusted_speech_speed = max(0.5, min(2.0, adjusted_speech_speed))
+                        print(f"Adjusted speech speed: {adjusted_speech_speed:.2f} (actual: {actual_duration:.2f}s, target: {target_duration:.2f}s)")
+                else:
+                    print(f"Generating for voice: {vc_name}, Text: {segment_text}..., EmoMode: {emo_mode}, emo_text_param: {emo_text_param}")
+                
+                # 生成最终音频（使用调整后的语速）
                 sr, wave, sub = indextts_model.generate(
                     text=segment_text, 
                     reference_audio=ref_audio, 
@@ -470,7 +595,7 @@ class indexTTS2Generate(io.ComfyNode):
                     length_penalty=length_penalty,
                     max_mel_tokens=max_mel_tokens, 
                     max_tokens_per_sentence=max_tokens_per_sentence,
-                    speech_speed=speech_speed,
+                    speech_speed=adjusted_speech_speed,
                     emo_text=emo_text_param,
                     emo_ref_audio=emo_ref_audio_param, 
                     emo_vector=emo_vector_param, 
@@ -525,22 +650,35 @@ class indexTTS2Generate(io.ComfyNode):
             
             # 生成最终字幕
             final_subtitle = json.dumps(all_subtitles, ensure_ascii=False) if all_subtitles else ""
+            final_subtitle_text = format_subtitle_text(final_subtitle)
 
             # 卸载模型
             if unload_model:
                 indextts_model.unload_model()
                 engine.tts = None
 
-            return io.NodeOutput(audio, seed, final_subtitle)
+            return io.NodeOutput(audio, seed, final_subtitle, final_subtitle_text)
         elif reference_audios is not None and len(reference_audios) > 0:
             # 使用reference_audios生成多角色语音
-            # 解析文本格式 [s1: emotion_data] 对话内容
+            # 解析文本格式 [s1: emotion_data] 对话内容 或 (start_time, end_time) 对话内容
             lines = text.split('\n')
             segments = []
+            last_char_index = 0  # 用于时间戳格式时记录最后使用的音色
             
             for line in lines:
                 line = line.strip()
                 if not line:
+                    continue
+                
+                # 检查是否是带时间戳的格式 (start, end) text
+                is_timed, start_time, end_time, timed_text = parse_timed_text(line)
+                if is_timed:
+                    # 使用最后一个音色或默认第一个
+                    char_index = last_char_index
+                    vc_name = f"s{char_index + 1}"
+                    target_duration = end_time - start_time
+                    # 时间戳格式：(char_index, vc_name, text, emo_mode, emo_vector, emo_text, start_time, end_time, target_duration)
+                    segments.append((char_index, vc_name, timed_text, EMOTION_MODE.SAME_AS_REF, None, None, start_time, end_time, target_duration))
                     continue
                 
                 # 检查是否是停顿标识 -Xs- (X可以是整数或浮点数)
@@ -548,7 +686,7 @@ class indexTTS2Generate(io.ComfyNode):
                 if pause_match:
                     # 添加停顿片段
                     pause_duration = float(pause_match.group(1))
-                    segments.append(("__PAUSE__", pause_duration))
+                    segments.append(("__PAUSE__", pause_duration, None, None, None, None, None, None, None))
                     continue
                 
                 # 检查是否符合 [sx: emotion_data] 或 [sx] 格式
@@ -578,6 +716,9 @@ class indexTTS2Generate(io.ComfyNode):
                     char_index = int(vc_name[1:]) - 1
                     if char_index < 0 or char_index >= len(reference_audios):
                         raise ValueError(f"音色索引超出范围: {vc_name}, 可用音频数量: {len(reference_audios)}")
+                    
+                    # 更新最后使用的音色索引
+                    last_char_index = char_index
                     
                     # 判断情感数据类型
                     emo_mode = EMOTION_MODE.SAME_AS_REF  # 默认使用参考音频的情感
@@ -611,12 +752,29 @@ class indexTTS2Generate(io.ComfyNode):
                                 emo_mode = EMOTION_MODE.EMO_TEXT
                                 emo_text = emotion_data
                     
-                    segments.append((char_index, vc_name, dialog_text, emo_mode, emo_vector, emo_text))
+                    # 普通格式：(char_index, vc_name, text, emo_mode, emo_vector, emo_text, None, None, None)
+                    segments.append((char_index, vc_name, dialog_text, emo_mode, emo_vector, emo_text, None, None, None))
                 else:
-                    raise ValueError(f"格式不正确，必须使用 [sx: emotion_data] 或 [sx] 对话内容 格式或 -Xs- 停顿格式: {line}")
+                    raise ValueError(f"格式不正确，必须使用 [sx: emotion_data] 或 [sx] 对话内容 格式或 -Xs- 停顿格式或 (start, end) 对话内容 时间戳格式: {line}")
             
             if not segments:
                 raise ValueError("未找到有效的对话片段")
+            
+            # 为时间戳格式自动添加停顿
+            processed_segments = []
+            last_end_time = 0.0
+            for segment in segments:
+                if len(segment) >= 9 and segment[6] is not None:  # 带时间戳的片段
+                    start_time = segment[6]
+                    # 如果开始时间大于上一个结束时间，添加停顿
+                    if start_time > last_end_time:
+                        pause_duration = start_time - last_end_time
+                        processed_segments.append(("__PAUSE__", pause_duration, None, None, None, None, None, None, None))
+                    processed_segments.append(segment)
+                    last_end_time = segment[7]  # 更新最后的结束时间
+                else:
+                    processed_segments.append(segment)
+            segments = processed_segments
             
             # 生成每个片段的音频
             all_waves = []
@@ -630,8 +788,8 @@ class indexTTS2Generate(io.ComfyNode):
             pbar = comfy.utils.ProgressBar(len(segments))
             
             for segment_idx, segment in enumerate(segments):
-                if len(segment) == 2 and segment[0] == "__PAUSE__":
-                    # 处理停顿
+                # 处理停顿
+                if len(segment) >= 2 and segment[0] == "__PAUSE__":
                     pause_duration = segment[1]
                     # 如果还没有采样率信息，使用默认值22050
                     sample_rate = current_sr if current_sr is not None else 22050
@@ -650,15 +808,19 @@ class indexTTS2Generate(io.ComfyNode):
                     current_time += pause_duration
                     continue
                 
-                char_index, vc_name, segment_text, emo_mode, emo_vector, emo_text = segment
+                # 解包segment
+                char_index, vc_name, segment_text = segment[0], segment[1], segment[2]
+                emo_mode = segment[3] if len(segment) > 3 else EMOTION_MODE.SAME_AS_REF
+                emo_vector = segment[4] if len(segment) > 4 else None
+                emo_text = segment[5] if len(segment) > 5 else None
+                start_time_target = segment[6] if len(segment) > 6 else None
+                end_time_target = segment[7] if len(segment) > 7 else None
+                target_duration = segment[8] if len(segment) > 8 else None
+                
                 # 检查是否已经处理过该音色的参考音频
                 if char_index not in processed_ref_audios:
                     processed_ref_audios[char_index] = process_audio_input(reference_audios[char_index])
                 ref_audio = processed_ref_audios[char_index]
-                
-                # 调试信息：确认音频对应关系
-                # print(f"Using voice {vc_name} (index {char_index}) for text: {segment_text[:30]}...")
-                # print(f"Reference audio shape: {ref_audio[0].shape if isinstance(ref_audio, tuple) else 'N/A'}, Sample rate: {ref_audio[1] if isinstance(ref_audio, tuple) else 'N/A'}")
                 
                 # 根据情感模式设置参数
                 emo_text_param = None
@@ -674,8 +836,48 @@ class indexTTS2Generate(io.ComfyNode):
                 elif emo_mode == EMOTION_MODE.EMO_VECTOR:
                     emo_vector_param = emo_vector
                 
-                # print(f"Generating for voice: {vc_name}, Text: {segment_text[:30]}..., EmoMode: {emo_mode}, emo_text_param: {emo_text_param}")
-                # 生成单个片段的音频
+                # 确定语速
+                adjusted_speech_speed = speech_speed
+                if target_duration is not None:
+                    # 带时间戳的片段：先用默认速度生成，然后计算需要的语速调整
+                    print(f"Generating timed segment for voice: {vc_name}, Text: {segment_text}, Target duration: {target_duration}s")
+                    
+                    # 第一次生成用于估算
+                    sr_temp, wave_temp, _ = indextts_model.generate(
+                        text=segment_text, 
+                        reference_audio=ref_audio, 
+                        mode="Auto",
+                        do_sample=do_sample, 
+                        temperature=temperature, 
+                        top_p=top_p, 
+                        top_k=top_k, 
+                        num_beams=num_beams,
+                        repetition_penalty=repetition_penalty, 
+                        length_penalty=length_penalty,
+                        max_mel_tokens=max_mel_tokens, 
+                        max_tokens_per_sentence=max_tokens_per_sentence,
+                        speech_speed=speech_speed,
+                        emo_text=emo_text_param,
+                        emo_ref_audio=emo_ref_audio_param, 
+                        emo_vector=emo_vector_param, 
+                        emo_weight=emo_weight_param,
+                        seed=seed, 
+                        return_subtitles=False, 
+                        use_random=use_random_param,
+                        use_qwen=use_qwen
+                    )
+                    
+                    # 计算实际时长
+                    actual_duration = len(wave_temp) / float(sr_temp)
+                    
+                    # 计算调整后的语速
+                    if actual_duration > 0 and target_duration > 0:
+                        adjusted_speech_speed = speech_speed * (actual_duration / target_duration)
+                        # 限制语速范围在合理区间
+                        adjusted_speech_speed = max(0.5, min(2.0, adjusted_speech_speed))
+                        print(f"Adjusted speech speed: {adjusted_speech_speed:.2f} (actual: {actual_duration:.2f}s, target: {target_duration:.2f}s)")
+                
+                # 生成最终音频（使用调整后的语速）
                 sr, wave, sub = indextts_model.generate(
                     text=segment_text, 
                     reference_audio=ref_audio, 
@@ -689,7 +891,7 @@ class indexTTS2Generate(io.ComfyNode):
                     length_penalty=length_penalty,
                     max_mel_tokens=max_mel_tokens, 
                     max_tokens_per_sentence=max_tokens_per_sentence,
-                    speech_speed=speech_speed,
+                    speech_speed=adjusted_speech_speed,
                     emo_text=emo_text_param,
                     emo_ref_audio=emo_ref_audio_param, 
                     emo_vector=emo_vector_param, 
@@ -744,35 +946,213 @@ class indexTTS2Generate(io.ComfyNode):
             
             # 生成最终字幕
             final_subtitle = json.dumps(all_subtitles, ensure_ascii=False) if all_subtitles else ""
+            final_subtitle_text = format_subtitle_text(final_subtitle)
 
             # 卸载模型
             if unload_model:
                 indextts_model.unload_model()
                 engine.tts = None
 
-            return io.NodeOutput(audio, seed, final_subtitle)
+            return io.NodeOutput(audio, seed, final_subtitle, final_subtitle_text)
         else:
             # 生成单人语音
-            pbar = comfy.utils.ProgressBar(100)
-            ref = process_audio_input(reference_audio)
-            pbar.update(10)
-            sr, wave, sub = indextts_model.generate(text=text, reference_audio=ref, mode="Auto",
-                do_sample=do_sample, temperature=temperature, top_p=top_p, top_k=top_k, num_beams=num_beams,
-                repetition_penalty=repetition_penalty, length_penalty=length_penalty,
-                max_mel_tokens=max_mel_tokens, max_tokens_per_sentence=max_tokens_per_sentence,
-                speech_speed=speech_speed,
-                emo_text=None, emo_ref_audio=None, emo_vector=None, emo_weight=0.8,
-                seed=seed, return_subtitles=True, use_random=False)
-            pbar.update(100)
-            wave_t = torch.tensor(wave, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
-            audio = {"waveform": wave_t, "sample_rate": int(sr)}
+            # 解析文本，检查是否包含时间戳格式
+            lines = text.split('\n')
+            has_timed_segments = any(parse_timed_text(line.strip())[0] for line in lines if line.strip())
+            
+            if has_timed_segments:
+                # 处理带时间戳的文本
+                segments = []
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    # 检查是否是带时间戳的格式
+                    is_timed, start_time, end_time, timed_text = parse_timed_text(line)
+                    if is_timed:
+                        target_duration = end_time - start_time
+                        segments.append((timed_text, start_time, end_time, target_duration))
+                    else:
+                        # 非时间戳文本，使用默认速度
+                        segments.append((line, None, None, None))
+                
+                # 为时间戳格式自动添加停顿
+                processed_segments = []
+                last_end_time = 0.0
+                for segment in segments:
+                    if segment[1] is not None:  # 带时间戳的片段
+                        start_time = segment[1]
+                        # 如果开始时间大于上一个结束时间，添加停顿
+                        if start_time > last_end_time:
+                            pause_duration = start_time - last_end_time
+                            processed_segments.append((f"[停顿 {pause_duration:.2f}秒]", None, None, pause_duration))
+                        processed_segments.append(segment)
+                        last_end_time = segment[2]  # 更新最后的结束时间
+                    else:
+                        processed_segments.append(segment)
+                segments = processed_segments
+                
+                # 处理参考音频
+                ref = process_audio_input(reference_audio)
+                
+                # 生成每个片段
+                all_waves = []
+                all_subtitles = []
+                current_time = 0.0
+                current_sr = None
+                
+                pbar = comfy.utils.ProgressBar(len(segments))
+                
+                for segment_text, start_time_target, end_time_target, target_duration in segments:
+                    # 处理停顿片段
+                    if segment_text.startswith("[停顿 ") and segment_text.endswith("秒]"):
+                        # 这是一个停顿片段
+                        pause_duration = target_duration
+                        sample_rate = current_sr if current_sr is not None else 22050
+                        silence_samples = int(pause_duration * sample_rate)
+                        silence_wave = np.zeros(silence_samples, dtype=np.float32)
+                        all_waves.append(silence_wave)
+                        
+                        all_subtitles.append({
+                            "字幕": segment_text,
+                            "start": round(current_time, 2),
+                            "end": round(current_time + pause_duration, 2)
+                        })
+                        
+                        current_time += pause_duration
+                        pbar.update(1)
+                        continue
+                    
+                    adjusted_speech_speed = speech_speed
+                    
+                    if target_duration is not None:
+                        # 带时间戳：计算调整后的语速
+                        print(f"Generating timed segment: {segment_text}, Target duration: {target_duration}s")
+                        
+                        # 第一次生成用于估算
+                        sr_temp, wave_temp, _ = indextts_model.generate(
+                            text=segment_text, 
+                            reference_audio=ref, 
+                            mode="Auto",
+                            do_sample=do_sample, 
+                            temperature=temperature, 
+                            top_p=top_p, 
+                            top_k=top_k, 
+                            num_beams=num_beams,
+                            repetition_penalty=repetition_penalty, 
+                            length_penalty=length_penalty,
+                            max_mel_tokens=max_mel_tokens, 
+                            max_tokens_per_sentence=max_tokens_per_sentence,
+                            speech_speed=speech_speed,
+                            emo_text=None, 
+                            emo_ref_audio=None, 
+                            emo_vector=None, 
+                            emo_weight=0.8,
+                            seed=seed, 
+                            return_subtitles=False, 
+                            use_random=False
+                        )
+                        
+                        # 计算实际时长
+                        actual_duration = len(wave_temp) / float(sr_temp)
+                        
+                        # 计算调整后的语速
+                        if actual_duration > 0 and target_duration > 0:
+                            adjusted_speech_speed = speech_speed * (actual_duration / target_duration)
+                            adjusted_speech_speed = max(0.5, min(2.0, adjusted_speech_speed))
+                            print(f"Adjusted speech speed: {adjusted_speech_speed:.2f} (actual: {actual_duration:.2f}s, target: {target_duration:.2f}s)")
+                    
+                    # 生成最终音频
+                    sr, wave, sub = indextts_model.generate(
+                        text=segment_text, 
+                        reference_audio=ref, 
+                        mode="Auto",
+                        do_sample=do_sample, 
+                        temperature=temperature, 
+                        top_p=top_p, 
+                        top_k=top_k, 
+                        num_beams=num_beams,
+                        repetition_penalty=repetition_penalty, 
+                        length_penalty=length_penalty,
+                        max_mel_tokens=max_mel_tokens, 
+                        max_tokens_per_sentence=max_tokens_per_sentence,
+                        speech_speed=adjusted_speech_speed,
+                        emo_text=None, 
+                        emo_ref_audio=None, 
+                        emo_vector=None, 
+                        emo_weight=0.8,
+                        seed=seed, 
+                        return_subtitles=True, 
+                        use_random=False
+                    )
+                    
+                    if current_sr is None:
+                        current_sr = sr
+                    
+                    all_waves.append(wave)
+                    
+                    # 更新字幕
+                    segment_duration = len(wave) / float(sr)
+                    if sub:
+                        try:
+                            sub_data = json.loads(sub)
+                            for item in sub_data:
+                                item["start"] = round(current_time + item.get("start", 0), 2)
+                                item["end"] = round(current_time + item.get("end", segment_duration), 2)
+                            all_subtitles.extend(sub_data)
+                        except:
+                            all_subtitles.append({
+                                "字幕": segment_text,
+                                "start": round(current_time, 2),
+                                "end": round(current_time + segment_duration, 2)
+                            })
+                    else:
+                        all_subtitles.append({
+                            "字幕": segment_text,
+                            "start": round(current_time, 2),
+                            "end": round(current_time + segment_duration, 2)
+                        })
+                    
+                    current_time += segment_duration
+                    pbar.update(1)
+                
+                # 合并音频
+                final_wave = np.concatenate(all_waves) if all_waves else np.array([])
+                wave_t = torch.tensor(final_wave, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+                audio = {"waveform": wave_t, "sample_rate": int(sr)}
+                final_subtitle = json.dumps(all_subtitles, ensure_ascii=False) if all_subtitles else ""
+                final_subtitle_text = format_subtitle_text(final_subtitle)
+                
+                # 卸载模型
+                if unload_model:
+                    indextts_model.unload_model()
+                    engine.tts = None
+                
+                return io.NodeOutput(audio, seed, final_subtitle, final_subtitle_text)
+            else:
+                # 原有的单人语音处理逻辑（无时间戳）
+                pbar = comfy.utils.ProgressBar(100)
+                ref = process_audio_input(reference_audio)
+                pbar.update(10)
+                sr, wave, sub = indextts_model.generate(text=text, reference_audio=ref, mode="Auto",
+                    do_sample=do_sample, temperature=temperature, top_p=top_p, top_k=top_k, num_beams=num_beams,
+                    repetition_penalty=repetition_penalty, length_penalty=length_penalty,
+                    max_mel_tokens=max_mel_tokens, max_tokens_per_sentence=max_tokens_per_sentence,
+                    speech_speed=speech_speed,
+                    emo_text=None, emo_ref_audio=None, emo_vector=None, emo_weight=0.8,
+                    seed=seed, return_subtitles=True, use_random=False)
+                pbar.update(100)
+                wave_t = torch.tensor(wave, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+                audio = {"waveform": wave_t, "sample_rate": int(sr)}
+                subtitle_text = format_subtitle_text(sub) if sub else ""
 
-            # 卸载模型
-            if unload_model:
-                indextts_model.unload_model()
-                engine.tts = None
+                # 卸载模型
+                if unload_model:
+                    indextts_model.unload_model()
+                    engine.tts = None
 
-            return io.NodeOutput(audio, seed, (sub or ""))
+                return io.NodeOutput(audio, seed, (sub or ""), subtitle_text)
 
 # 简化版语音生成节点
 class indexTTSGenerateSimple(io.ComfyNode):
@@ -795,6 +1175,7 @@ class indexTTSGenerateSimple(io.ComfyNode):
                 io.Audio.Output(display_name="audio"),
                 io.Int.Output(display_name="seed"),
                 io.String.Output(display_name="subtitle"),
+                io.String.Output(display_name="subtitle_text"),
             ],
         )
 
