@@ -47,7 +47,6 @@ from transformers.configuration_utils import PretrainedConfig
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from transformers.integrations.fsdp import is_fsdp_managed_module
 from transformers.modeling_outputs import CausalLMOutputWithPast, Seq2SeqLMOutput
-from transformers.pytorch_utils import isin_mps_friendly
 from transformers.tokenization_utils import ExtensionsTrie
 from transformers.utils import (
     ModelOutput,
@@ -624,10 +623,10 @@ class GenerationMixin:
             return default_attention_mask
 
         is_pad_token_in_inputs = (pad_token_id is not None) and (
-            isin_mps_friendly(elements=inputs, test_elements=pad_token_id).any()
+            torch.isin(elements=inputs, test_elements=pad_token_id).any()
         )
         is_pad_token_not_equal_to_eos_token_id = (eos_token_id is None) or ~(
-            isin_mps_friendly(elements=eos_token_id, test_elements=pad_token_id).any()
+            torch.isin(elements=eos_token_id, test_elements=pad_token_id).any()
         )
         can_infer_attention_mask = is_pad_token_in_inputs * is_pad_token_not_equal_to_eos_token_id
         attention_mask_from_padding = inputs.ne(pad_token_id).long()
@@ -1845,7 +1844,7 @@ class GenerationMixin:
         if not is_torchdynamo_compiling():  # Checks that depend on tensor-dependent control flow
             if (
                 eos_token_tensor is not None
-                and isin_mps_friendly(elements=eos_token_tensor, test_elements=pad_token_tensor).any()
+                and torch.isin(elements=eos_token_tensor, test_elements=pad_token_tensor).any()
             ):
                 if kwargs_has_attention_mask is not None and not kwargs_has_attention_mask:
                     logger.warning_once(
