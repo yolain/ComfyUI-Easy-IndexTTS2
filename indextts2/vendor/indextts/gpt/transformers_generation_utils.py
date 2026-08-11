@@ -1579,58 +1579,54 @@ class GenerationMixin:
         Prepares the base generation config, then applies any generation configuration options from kwargs. This
         function handles retrocompatibility with respect to configuration files.
         """
-        # TODO joao: when we can detect `fullgraph=True` in `torch.compile` (https://github.com/pytorch/pytorch/pull/120400)
-        # replace `is_torchdynamo_compiling` by the corresponding check. As it is, we are being too restrictive with
-        # the parameterization in `fullgraph=False` so as to enable `fullgraph=True`.
+        # parameterization priority:
+        # user-defined kwargs or `generation_config` > `self.generation_config` > global default values
+        # TODO (joao): per-model generation config classes.
 
-        # priority: `generation_config` argument > `model.generation_config` (the default generation config)
-        using_model_generation_config = False
+        generation_config_provided = generation_config is not None
         if generation_config is None:
-            # legacy: users may modify the model configuration to control generation. To trigger this legacy behavior,
-            # the following conditions must be met
-            # 1) the generation config must have been created from the model config (`_from_model_config` field);
-            # 2) the generation config must have seen no modification since its creation (the hash is the same);
-            # 3) there are non-default generation parameters in the model config.
-            # 4) the user must have set new generation parameters in the model config.
-            # NOTE: `torch.compile` can't compile `hash`, this legacy support is disabled with compilation.
-            if (
-                not is_torchdynamo_compiling()
-                and self.generation_config._from_model_config  # 1)
-                and self.generation_config._original_object_hash == hash(self.generation_config)  # 2)
-                and len(self.config._get_non_default_generation_parameters()) > 0  # 3)
-            ):
-                new_generation_config = GenerationConfig.from_model_config(self.config)
-                if new_generation_config != self.generation_config:  # 4)
-                    warnings.warn(
-                        "You have modified the pretrained model configuration to control generation. This is a"
-                        " deprecated strategy to control generation and will be removed in v5."
-                        " Please use and modify the model generation configuration (see"
-                        " https://huggingface.co/docs/transformers/generation_strategies#default-text-generation-configuration )",
-                        UserWarning,
-                    )
-                    self.generation_config = new_generation_config
+            # Users may modify `model.config` to control generation. This is a legacy behavior and is not supported anymore
+            if len(self.config._get_generation_parameters()) > 0:
+                raise ValueError(
+                    "You have modified the pretrained model configuration to control generation "
+                    f"We detected the following values set - {self.config._get_generation_parameters()}. "
+                    "This strategy to control generation is not supported anymore. Please use and modify `model.generation_config` "
+                    "(see https://huggingface.co/docs/transformers/generation_strategies#default-text-generation-configuration )",
+                )
+            generation_config = GenerationConfig()
 
-            generation_config = self.generation_config
-            using_model_generation_config = True
+        # `torch.export.export` usually raises an exception if it is called
+        # with ``strict=True``. deepcopy can only be processed if ``strict=False``.
+        generation_config = copy.deepcopy(generation_config)
 
-        # `torch.compile` can't compile `copy.deepcopy`, arguments in `kwargs` that are part of `generation_config`
-        # will mutate the object with `.update`. As such, passing these arguments through `kwargs` is disabled -- an
-        # exception will be raised in `_validate_model_kwargs`
-        if not is_torchdynamo_compiling():
-            generation_config = copy.deepcopy(generation_config)
-            model_kwargs = generation_config.update(**kwargs)
-            # If `generation_config` is provided, let's fallback ALL special tokens to the default values for the model
-            if not using_model_generation_config:
-                if generation_config.bos_token_id is None:
-                    generation_config.bos_token_id = self.generation_config.bos_token_id
-                if generation_config.eos_token_id is None:
-                    generation_config.eos_token_id = self.generation_config.eos_token_id
-                if generation_config.pad_token_id is None:
-                    generation_config.pad_token_id = self.generation_config.pad_token_id
-                if generation_config.decoder_start_token_id is None:
-                    generation_config.decoder_start_token_id = self.generation_config.decoder_start_token_id
-        else:
-            model_kwargs = kwargs
+        # First set values from the loaded `self.generation_config`, then set default values (BC)
+        #
+        # Only update values that are `None`, i.e. these values were not explicitly set by users to `generate()`,
+        # or values that are not present in the current config, i.e. custom entries that were set via `**kwargs`.
+        # Thus we use the specific kwargs `defaults_only=True` (`None` values only) and `allow_custom_entries=True`
+        # (custom entries are carried over).
+        global_defaults = self.generation_config._get_default_generation_params()
+        generation_config.update(**self.generation_config.to_dict(), defaults_only=True, allow_custom_entries=True)
+        generation_config.update(**global_defaults, defaults_only=True)
+
+        # Finally, if there are any kwargs, update config with it -> highest priority at the end
+        model_kwargs = generation_config.update(**kwargs)
+
+        # It doesn't make sense to allow kwargs and `generation_config`, that should be mutually exclusive
+        if generation_config_provided and set(kwargs.keys()) - set(model_kwargs.keys()):
+            generation_kwargs = set(kwargs.keys()) - set(model_kwargs.keys())
+            logger.warning_once(
+                f"Passing `generation_config` together with generation-related "
+                f"arguments=({generation_kwargs}) is deprecated and will be removed in future versions. "
+                "Please pass either a `generation_config` object OR all generation "
+                "parameters explicitly, but not both.",
+            )
+
+        # Finally keep output_xxx args in `model_kwargs` so it can be passed to `forward`
+        output_attentions = generation_config.output_attentions
+        output_hidden_states = generation_config.output_hidden_states
+        model_kwargs.update({"output_attentions": output_attentions} if output_attentions else {})
+        model_kwargs.update({"output_hidden_states": output_hidden_states} if output_hidden_states else {})
 
         return generation_config, model_kwargs
 

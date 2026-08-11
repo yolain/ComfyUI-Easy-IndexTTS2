@@ -2814,19 +2814,6 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMix
         # Save the config
         if is_main_process:
             if not _hf_peft_config_loaded:
-                # If the model config has set attributes that should be in the generation config, move them there.
-                misplaced_generation_parameters = model_to_save.config._get_non_default_generation_parameters()
-                if self.can_generate() and len(misplaced_generation_parameters) > 0:
-                    warnings.warn(
-                        "Moving the following attributes in the config to the generation config: "
-                        f"{misplaced_generation_parameters}. You are seeing this warning because you've set "
-                        "generation parameters in the model config, as opposed to in the generation config.",
-                        UserWarning,
-                    )
-                    for param_name, param_value in misplaced_generation_parameters.items():
-                        setattr(model_to_save.generation_config, param_name, param_value)
-                        setattr(model_to_save.config, param_name, None)
-
                 model_to_save.config.save_pretrained(save_directory)
             if self.can_generate():
                 model_to_save.generation_config.save_pretrained(save_directory)
