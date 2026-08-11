@@ -53,12 +53,14 @@ from transformers.loss.loss_utils import LOSS_MAPPING
 from transformers.pytorch_utils import (  # noqa: F401
     Conv1D,
     apply_chunking_to_forward,
-    find_pruneable_heads_and_indices,
     id_tensor_storage,
     is_torch_greater_or_equal_than_1_13,
+    prune_linear_layer,
+)
+from indextts.gpt.pytorch_utils_fallback import (  # noqa: F401
+    find_pruneable_heads_and_indices,
     prune_conv1d_layer,
     prune_layer,
-    prune_linear_layer,
 )
 from transformers.quantizers import AutoHfQuantizer, HfQuantizer
 from transformers.quantizers.quantizers_utils import get_module_from_name
@@ -69,11 +71,8 @@ from transformers.utils import (
     ADAPTER_WEIGHTS_NAME,
     CONFIG_NAME,
     DUMMY_INPUTS,
-    FLAX_WEIGHTS_NAME,
     SAFE_WEIGHTS_INDEX_NAME,
     SAFE_WEIGHTS_NAME,
-    TF2_WEIGHTS_NAME,
-    TF_WEIGHTS_NAME,
     WEIGHTS_INDEX_NAME,
     WEIGHTS_NAME,
     ContextManagers,
@@ -81,22 +80,26 @@ from transformers.utils import (
     PushToHubMixin,
     cached_file,
     copy_func,
-    download_url,
     extract_commit_hash,
     has_file,
     is_accelerate_available,
     is_bitsandbytes_available,
     is_flash_attn_2_available,
-    is_offline_mode,
     is_optimum_available,
     is_peft_available,
-    is_remote_url,
-    is_safetensors_available,
-    is_torch_sdpa_available,
     is_torch_xla_available,
     logging,
     replace_return_docstrings,
     strtobool,
+)
+from indextts.gpt.utils_fallback import (
+    FLAX_WEIGHTS_NAME,
+    TF2_WEIGHTS_NAME,
+    TF_WEIGHTS_NAME,
+    download_url,
+    is_offline_mode,
+    is_remote_url,
+    is_safetensors_available,
 )
 from transformers.utils.hub import convert_file_size_to_int, create_and_tag_model_card, get_checkpoint_shard_files
 from transformers.utils.import_utils import (
@@ -1830,12 +1833,8 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMix
                     " Please request the support for this architecture: https://github.com/huggingface/transformers/issues/28005. If you believe"
                     ' this error is a bug, please open an issue in Transformers GitHub repository and load your model with the argument `attn_implementation="eager"` meanwhile. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="eager")`'
                 )
-            if not is_torch_sdpa_available():
-                raise ImportError(
-                    "PyTorch SDPA requirements in Transformers are not met. Please install torch>=2.1.1."
-                )
 
-        if not is_torch_sdpa_available() or not cls._supports_sdpa:
+        if not cls._supports_sdpa:
             return config
 
         _is_bettertransformer = getattr(cls, "use_bettertransformer", False)
@@ -2815,19 +2814,6 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMix
         # Save the config
         if is_main_process:
             if not _hf_peft_config_loaded:
-                # If the model config has set attributes that should be in the generation config, move them there.
-                misplaced_generation_parameters = model_to_save.config._get_non_default_generation_parameters()
-                if self.can_generate() and len(misplaced_generation_parameters) > 0:
-                    warnings.warn(
-                        "Moving the following attributes in the config to the generation config: "
-                        f"{misplaced_generation_parameters}. You are seeing this warning because you've set "
-                        "generation parameters in the model config, as opposed to in the generation config.",
-                        UserWarning,
-                    )
-                    for param_name, param_value in misplaced_generation_parameters.items():
-                        setattr(model_to_save.generation_config, param_name, param_value)
-                        setattr(model_to_save.config, param_name, None)
-
                 model_to_save.config.save_pretrained(save_directory)
             if self.can_generate():
                 model_to_save.generation_config.save_pretrained(save_directory)

@@ -12,90 +12,33 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Local fallback for ``transformers.generation.beam_search``.
+
+``transformers.generation.beam_search`` (which provided ``BeamScorer``,
+``BeamSearchScorer``, ``ConstrainedBeamSearchScorer`` and ``BeamHypotheses``) was
+removed in ``transformers`` 5.0.0. This module vendors the original v4
+implementations so the vendored ``GenerationMixin`` keeps working on both
+``transformers`` 4.x and 5.x.
+"""
 
 from abc import ABC, abstractmethod
 from collections import UserDict
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Optional, Union
 
 import numpy as np
 import torch
 
-from transformers.utils import add_start_docstrings
-from indextts.gpt.beam_constraints import Constraint, ConstraintListState
-
-
-PROCESS_INPUTS_DOCSTRING = r"""
-    Args:
-        input_ids (`torch.LongTensor` of shape `(batch_size * num_beams, sequence_length)`):
-            Indices of input sequence tokens in the vocabulary.
-
-            Indices can be obtained using any class inheriting from [`PreTrainedTokenizer`]. See
-            [`PreTrainedTokenizer.encode`] and [`PreTrainedTokenizer.__call__`] for details.
-
-            [What are input IDs?](../glossary#input-ids)
-        next_scores (`torch.FloatTensor` of shape `(batch_size, 2 * num_beams)`):
-            Current scores of the top `2 * num_beams` non-finished beam hypotheses.
-        next_tokens (`torch.LongTensor` of shape `(batch_size, 2 * num_beams)`):
-            `input_ids` of the tokens corresponding to the top `2 * num_beams` non-finished beam hypotheses.
-        next_indices (`torch.LongTensor` of shape `(batch_size, 2 * num_beams)`):
-            Beam indices indicating to which beam hypothesis the `next_tokens` correspond.
-        pad_token_id (`int`, *optional*):
-            The id of the *padding* token.
-        eos_token_id (`Union[int, List[int]]`, *optional*):
-            The id of the *end-of-sequence* token. Optionally, use a list to set multiple *end-of-sequence* tokens.
-        beam_indices (`torch.LongTensor`, *optional*):
-            Beam indices indicating to which beam hypothesis each token correspond.
-        group_index (`int`, *optional*):
-            The index of the group of beams. Used with [`~PreTrainedModel.group_beam_search`].
-
-    Return:
-        `UserDict`: A dictionary composed of the fields as defined above:
-
-            - **next_beam_scores** (`torch.FloatTensor` of shape `(batch_size * num_beams)`) -- Updated scores of all
-              non-finished beams.
-            - **next_beam_tokens** (`torch.FloatTensor` of shape `(batch_size * num_beams)`) -- Next tokens to be added
-              to the non-finished beam_hypotheses.
-            - **next_beam_indices** (`torch.FloatTensor` of shape `(batch_size * num_beams)`) -- Beam indices
-              indicating to which beam the next tokens shall be added.
-
-"""
-
-FINALIZE_INPUTS_DOCSTRING = r"""
-    Args:
-        input_ids (`torch.LongTensor` of shape `(batch_size * num_beams, sequence_length)`):
-            Indices of input sequence tokens in the vocabulary.
-
-            Indices can be obtained using any class inheriting from [`PreTrainedTokenizer`]. See
-            [`PreTrainedTokenizer.encode`] and [`PreTrainedTokenizer.__call__`] for details.
-
-            [What are input IDs?](../glossary#input-ids)
-        final_beam_scores (`torch.FloatTensor` of shape `(batch_size * num_beams)`):
-            The final scores of all non-finished beams.
-        final_beam_tokens (`torch.FloatTensor` of shape `(batch_size * num_beams)`):
-            The last tokens to be added to the non-finished beam_hypotheses.
-        final_beam_indices (`torch.FloatTensor` of shape `(batch_size * num_beams)`):
-            The beam indices indicating to which beam the `final_beam_tokens` shall be added.
-        pad_token_id (`int`, *optional*):
-            The id of the *padding* token.
-        eos_token_id (`Union[int, List[int]]`, *optional*):
-            The id of the *end-of-sequence* token. Optionally, use a list to set multiple *end-of-sequence* tokens.
-
-    Return:
-        `torch.LongTensor` of shape `(batch_size * num_return_sequences, sequence_length)`: The generated sequences.
-        The second dimension (sequence_length) is either equal to `max_length` or shorter if all batches finished early
-        due to the `eos_token_id`.
-
-"""
+from .beam_constraints import Constraint, ConstraintListState
 
 
 class BeamScorer(ABC):
     """
-    Abstract base class for all beam scorers that are used for [`~PreTrainedModel.beam_search`] and
+    Abstract base class for all beam scorers that are used for
+    [`~PreTrainedModel.beam_search`] and
     [`~PreTrainedModel.beam_sample`].
     """
 
     @abstractmethod
-    @add_start_docstrings(PROCESS_INPUTS_DOCSTRING)
     def process(
         self,
         input_ids: torch.LongTensor,
@@ -103,11 +46,10 @@ class BeamScorer(ABC):
         next_tokens: torch.LongTensor,
         next_indices: torch.LongTensor,
         **kwargs,
-    ) -> Tuple[torch.Tensor]:
+    ) -> tuple[torch.Tensor]:
         raise NotImplementedError("This is an abstract method.")
 
     @abstractmethod
-    @add_start_docstrings(FINALIZE_INPUTS_DOCSTRING)
     def finalize(
         self,
         input_ids: torch.LongTensor,
@@ -127,12 +69,14 @@ class BeamSearchScorer(BeamScorer):
     Adapted in part from [Facebook's XLM beam search
     code](https://github.com/facebookresearch/XLM/blob/9e6f6814d17be4fe5b15f2e6c43eb2b2d76daeb4/src/model/transformer.py#L529).
 
-    Reference for the diverse beam search algorithm and implementation [Ashwin Kalyan's DBS
+    Reference for the diverse beam search algorithm and implementation
+    [Ashwin Kalyan's DBS
     implementation](https://github.com/ashwinkalyan/dbs/blob/master/dbs/beam_utils.lua)
 
     Args:
         batch_size (`int`):
-            Batch Size of `input_ids` for which standard beam search decoding is run in parallel.
+            Batch Size of `input_ids` for which standard beam search decoding is run in
+            parallel.
         num_beams (`int`):
             Number of beams for beam search.
         device (`torch.device`):
@@ -154,7 +98,7 @@ class BeamSearchScorer(BeamScorer):
             [`~transformers.BeamSearchScorer.finalize`].
         num_beam_groups (`int`, *optional*, defaults to 1):
             Number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
-            See [this paper](https://arxiv.org/pdf/1610.02424.pdf) for more details.
+            See [this paper](https://huggingface.co/papers/1610.02424) for more details.
         max_length (`int`, *optional*):
             The maximum length of the sequence to be generated.
     """
@@ -219,16 +163,16 @@ class BeamSearchScorer(BeamScorer):
         next_tokens: torch.LongTensor,
         next_indices: torch.LongTensor,
         pad_token_id: Optional[Union[int, torch.Tensor]] = None,
-        eos_token_id: Optional[Union[int, List[int], torch.Tensor]] = None,
+        eos_token_id: Optional[Union[int, list[int], torch.Tensor]] = None,
         beam_indices: Optional[torch.LongTensor] = None,
         group_index: Optional[int] = 0,
         decoder_prompt_len: Optional[int] = 0,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         # add up to the length which the next_scores is calculated on (including decoder prompt)
         cur_len = input_ids.shape[-1] + 1
         batch_size = len(self._beam_hyps) // self.num_beam_groups
 
-        if not (batch_size == (input_ids.shape[0] // self.group_size)):
+        if batch_size != (input_ids.shape[0] // self.group_size):
             if self.num_beam_groups > 1:
                 raise ValueError(
                     f"A group beam size of {input_ids.shape[0]} is used as the input, but a group beam "
@@ -325,10 +269,10 @@ class BeamSearchScorer(BeamScorer):
         final_beam_indices: torch.LongTensor,
         max_length: int,
         pad_token_id: Optional[Union[int, torch.Tensor]] = None,
-        eos_token_id: Optional[Union[int, List[int], torch.Tensor]] = None,
+        eos_token_id: Optional[Union[int, list[int], torch.Tensor]] = None,
         beam_indices: Optional[torch.LongTensor] = None,
         decoder_prompt_len: Optional[int] = 0,
-    ) -> Tuple[torch.LongTensor]:
+    ) -> tuple[torch.LongTensor]:
         batch_size = len(self._beam_hyps) // self.num_beam_groups
 
         if eos_token_id is not None and not isinstance(eos_token_id, torch.Tensor):
@@ -399,7 +343,6 @@ class BeamSearchScorer(BeamScorer):
         # fill with hypotheses and eos_token_id if the latter fits in
         for i, (hypo, best_idx) in enumerate(zip(best, best_indices)):
             decoded[i, : sent_lengths[i]] = hypo
-
             if indices is not None:
                 indices[i, : len(best_idx)] = torch.tensor(best_idx)
 
@@ -420,13 +363,12 @@ class ConstrainedBeamSearchScorer(BeamScorer):
     r"""
     [`BeamScorer`] implementing constrained beam search decoding.
 
-
     Args:
         batch_size (`int`):
             Batch Size of `input_ids` for which standard beam search decoding is run in parallel.
         num_beams (`int`):
             Number of beams for beam search.
-        constraints (`List[Constraint]`):
+        constraints (`list[Constraint]`):
             A list of positive constraints represented as `Constraint` objects that must be fulfilled in the generation
             output. For more information, the documentation of [`Constraint`] should be read.
         device (`torch.device`):
@@ -448,7 +390,7 @@ class ConstrainedBeamSearchScorer(BeamScorer):
             [`~transformers.BeamSearchScorer.finalize`].
         num_beam_groups (`int`, *optional*, defaults to 1):
             Number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
-            See [this paper](https://arxiv.org/pdf/1610.02424.pdf) for more details.
+            See [this paper](https://huggingface.co/papers/1610.02424) for more details.
         max_length (`int`, *optional*):
             The maximum length of the sequence to be generated.
     """
@@ -457,7 +399,7 @@ class ConstrainedBeamSearchScorer(BeamScorer):
         self,
         batch_size: int,
         num_beams: int,
-        constraints: List[Constraint],
+        constraints: list[Constraint],
         device: torch.device,
         length_penalty: Optional[float] = 1.0,
         do_early_stopping: Optional[Union[bool, str]] = False,
@@ -518,10 +460,10 @@ class ConstrainedBeamSearchScorer(BeamScorer):
         next_indices: torch.LongTensor,
         scores_for_all_vocab: torch.FloatTensor,
         pad_token_id: Optional[Union[int, torch.Tensor]] = None,
-        eos_token_id: Optional[Union[int, List[int], torch.Tensor]] = None,
+        eos_token_id: Optional[Union[int, list[int], torch.Tensor]] = None,
         beam_indices: Optional[torch.LongTensor] = None,
         decoder_prompt_len: Optional[int] = 0,
-    ) -> Tuple[torch.Tensor]:
+    ) -> tuple[torch.Tensor]:
         r"""
         Args:
             input_ids (`torch.LongTensor` of shape `(batch_size * num_beams, sequence_length)`):
@@ -541,7 +483,7 @@ class ConstrainedBeamSearchScorer(BeamScorer):
                 The scores of all tokens in the vocabulary for each of the beam hypotheses.
             pad_token_id (`int`, *optional*):
                 The id of the *padding* token.
-            eos_token_id (`Union[int, List[int]]`, *optional*):
+            eos_token_id (`Union[int, list[int]]`, *optional*):
                 The id of the *end-of-sequence* token. Optionally, use a list to set multiple *end-of-sequence* tokens.
             beam_indices (`torch.LongTensor`, *optional*):
                 Beam indices indicating to which beam hypothesis each token correspond.
@@ -551,20 +493,18 @@ class ConstrainedBeamSearchScorer(BeamScorer):
             `UserDict`: A dictionary composed of the fields as defined above:
 
                 - **next_beam_scores** (`torch.FloatTensor` of shape `(batch_size * num_beams)`) -- Updated scores of
-                  all
-                non-finished beams.
+                  all non-finished beams.
 
                 - **next_beam_tokens** (`torch.FloatTensor` of shape `(batch_size * num_beams)`) -- Next tokens to be
-                  added
-                to the non-finished beam_hypotheses.
+                  added to the non-finished beam_hypotheses.
                 - **next_beam_indices** (`torch.FloatTensor` of shape `(batch_size * num_beams)`) -- Beam indices
-                indicating to which beam the next tokens shall be added.
+                  indicating to which beam the next tokens shall be added.
         """
 
         # add up to the length which the next_scores is calculated on (including decoder prompt)
         cur_len = input_ids.shape[-1] + 1
         batch_size = len(self._beam_hyps)
-        if not (batch_size == (input_ids.shape[0] // self.group_size)):
+        if batch_size != (input_ids.shape[0] // self.group_size):
             if self.num_beam_groups > 1:
                 raise ValueError(
                     f"A group beam size of {input_ids.shape[0]} is used as the input, but a group beam "
@@ -612,7 +552,7 @@ class ConstrainedBeamSearchScorer(BeamScorer):
                     if is_beam_token_worse_than_top_num_beams:
                         continue
 
-                    completes_constraint = self.check_completes_constraints(input_ids[batch_beam_idx].cpu().tolist())
+                    completes_constraint = self.check_completes_constraints(input_ids[batch_beam_idx].tolist())
                     if completes_constraint:
                         if beam_indices is not None:
                             beam_index = beam_indices[batch_beam_idx]
@@ -697,6 +637,7 @@ class ConstrainedBeamSearchScorer(BeamScorer):
         advance_constraint_states = self.make_constraint_states(orig_len)
 
         sidx, eidx = batch_idx * orig_len, (batch_idx + 1) * orig_len
+
         this_batch_input_ids = input_ids[sidx:eidx]
         this_batch_token_scores = vocab_scores[sidx:eidx]
         full_hypotheses = torch.cat((input_ids[sent_beam_indices], sent_beam_tokens.unsqueeze(-1)), dim=-1)
@@ -713,24 +654,24 @@ class ConstrainedBeamSearchScorer(BeamScorer):
             # pre_seq = ith sequence generated before this step.
 
             # input_ids -> (topk) generic beam search best model next tokens
-            #           -> (advance) constraints forcing the next token
+            #          -> (advance) constraints forcing the next token
             # either way, we need to sort them into "banks" later, so store a "ConstraintListState" for all types of
             # hypotheses.
 
             topk_state = topk_contraint_states[seq_idx]
-            topk_state.reset(full_hypotheses[seq_idx].cpu().tolist())
+            topk_state.reset(full_hypotheses[seq_idx].tolist())
 
             advance_state = advance_constraint_states[seq_idx]
-            advance_state.reset(pre_seq.cpu().tolist())
+            advance_state.reset(pre_seq.tolist())
 
             if not advance_state.completed:
-                advance_tokens = torch.LongTensor(advance_state.advance()).to(device)
+                advance_tokens = torch.tensor(advance_state.advance(), dtype=torch.long, device=device)
                 for advance_token in advance_tokens:
                     # since adding each `advance_token` leads to a different hypothesis, create new state instance.
                     new_state = advance_state.copy(stateful=True)
-                    new_state.add(advance_token.cpu().tolist())
+                    new_state.add(advance_token.tolist())
 
-                    advance_seq = torch.cat((pre_seq, advance_token.unsqueeze(0)), -1).cpu().tolist()
+                    advance_seq = torch.cat((pre_seq, advance_token.unsqueeze(0)), -1).tolist()
                     if advance_seq not in track_new["new_seqs"]:
                         # prevent duplicates, which are basically bound to happen in this process.
                         track_new["new_seqs"].append(advance_seq)
@@ -763,7 +704,7 @@ class ConstrainedBeamSearchScorer(BeamScorer):
 
                 advance_state = advance_constraint_states[seq_idx]
 
-                advance_seq = advance_seq.cpu().tolist()
+                advance_seq = advance_seq.tolist()
 
                 advance_state.reset(advance_seq)
                 if advance_seq not in track_new["new_seqs"]:
@@ -775,14 +716,14 @@ class ConstrainedBeamSearchScorer(BeamScorer):
                     track_new["new_states"].append(advance_state)
 
         if len(track_new["new_indices"]) > 0:
-            new_indices = torch.tensor(track_new["new_indices"]).to(device)
+            new_indices = torch.tensor(track_new["new_indices"], device=device)
             new_tokens = torch.stack(track_new["new_tokens"]).to(device)
             new_scores = torch.stack(track_new["new_scores"]).to(device)
 
             all_states = topk_contraint_states + track_new["new_states"]
             all_tokens = torch.cat((sent_beam_tokens, new_tokens), -1)
             all_scores = torch.cat((sent_beam_scores, new_scores), -1)
-            all_banks = torch.tensor([one.get_bank() for one in all_states]).to(device)
+            all_banks = torch.tensor([one.get_bank() for one in all_states], device=device)
 
             zipped = all_banks * 100 + all_scores
             indices = zipped.sort(descending=True).indices
@@ -818,10 +759,10 @@ class ConstrainedBeamSearchScorer(BeamScorer):
         final_beam_indices: torch.LongTensor,
         max_length: int,
         pad_token_id: Optional[Union[int, torch.Tensor]] = None,
-        eos_token_id: Optional[Union[int, List[int], torch.Tensor]] = None,
+        eos_token_id: Optional[Union[int, list[int], torch.Tensor]] = None,
         beam_indices: Optional[torch.LongTensor] = None,
         decoder_prompt_len: Optional[int] = 0,
-    ) -> Tuple[torch.LongTensor]:
+    ) -> tuple[torch.LongTensor]:
         batch_size = len(self._beam_hyps)
 
         if eos_token_id is not None and not isinstance(eos_token_id, torch.Tensor):
@@ -843,14 +784,14 @@ class ConstrainedBeamSearchScorer(BeamScorer):
                 final_score = final_beam_scores[batch_beam_idx].item()
                 final_tokens = input_ids[batch_beam_idx]
 
-                completes_constraint = self.check_completes_constraints(final_tokens.cpu().tolist())
+                completes_constraint = self.check_completes_constraints(final_tokens.tolist())
                 if completes_constraint:
                     beam_index = beam_indices[batch_beam_idx] if beam_indices is not None else None
                     generated_len = final_tokens.shape[-1] - decoder_prompt_len
                     beam_hyp.add(final_tokens, final_score, beam_indices=beam_index, generated_len=generated_len)
                     ids_collect.append(beam_id)
 
-            # due to overly complex constraints or other factors, sometimes we can't gaurantee a successful
+            # due to overly complex constraints or other factors, sometimes we can't guarantee a successful
             # generation. In these cases we simply return the highest scoring outputs.
             if len(ids_collect) < self.num_beam_hyps_to_keep:
                 for beam_id in range(self.num_beams):
@@ -889,7 +830,6 @@ class ConstrainedBeamSearchScorer(BeamScorer):
 
         # prepare for adding eos
         sent_lengths_max = sent_lengths.max().item() + 1
-
         sent_max_len = min(sent_lengths_max, max_length) if max_length is not None else sent_lengths_max
         decoded: torch.LongTensor = input_ids.new(batch_size * self.num_beam_hyps_to_keep, sent_max_len)
 

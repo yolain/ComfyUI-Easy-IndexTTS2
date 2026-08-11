@@ -418,8 +418,8 @@ class BigVGAN(
             revision: str,
             cache_dir: str,
             force_download: bool,
-            proxies: Optional[Dict],
-            resume_download: bool,
+            proxies: Optional[Dict] = None,
+            resume_download: bool = False,
             local_files_only: bool,
             token: Union[str, bool, None],
             map_location: str = "cpu",  # Additional argument

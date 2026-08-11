@@ -30,36 +30,36 @@ try:
         Cache,
         DynamicCache,
         EncoderDecoderCache,
-        OffloadedCache,
-        QuantizedCacheConfig,
+        QuantizedCache,
         StaticCache,
     )
 except Exception:
+    # transformers < 5.0.0: `QuantizedCache` does not exist yet.
     from transformers.cache_utils import (
         Cache,
         DynamicCache,
         EncoderDecoderCache,
-        OffloadedCache,
-        QuantoQuantizedCache as QuantizedCacheConfig,
         StaticCache,
     )
+
+    QuantizedCache = None
 from transformers.configuration_utils import PretrainedConfig
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from transformers.integrations.fsdp import is_fsdp_managed_module
 from transformers.modeling_outputs import CausalLMOutputWithPast, Seq2SeqLMOutput
-from transformers.pytorch_utils import isin_mps_friendly
-from transformers.tokenization_utils import ExtensionsTrie
+try:
+    from transformers.tokenization_python import ExtensionsTrie
+except ImportError:
+    # transformers < 5.0.0: `ExtensionsTrie` lives in `tokenization_utils`.
+    from transformers.tokenization_utils import ExtensionsTrie
 from transformers.utils import (
     ModelOutput,
     is_accelerate_available,
-    is_hqq_available,
-    is_optimum_quanto_available,
-    # is_quanto_available,
     is_torchdynamo_compiling,
     logging,
 )
-from transformers.generation.beam_constraints import DisjunctiveConstraint, PhrasalConstraint
-from transformers.generation.beam_search import BeamScorer, BeamSearchScorer, ConstrainedBeamSearchScorer
+from indextts.gpt.beam_constraints import DisjunctiveConstraint, PhrasalConstraint
+from indextts.gpt.beam_search import BeamScorer, BeamSearchScorer, ConstrainedBeamSearchScorer
 try:
     from transformers.generation.candidate_generator import (
         AssistedCandidateGenerator,
@@ -91,20 +91,24 @@ except Exception:
     def _prepare_token_type_ids(model_input_names, inputs, model_kwargs):
         # Return existing token_type_ids if available; else None
         return model_kwargs.get("token_type_ids", None)
-from transformers.generation.configuration_utils import (
-    GenerationConfig,
-    GenerationMode,
-)
 try:
-    from transformers.generation.configuration_utils import NEED_SETUP_CACHE_CLASSES_MAPPING
+    from transformers.generation.configuration_utils import (
+        ALL_STATIC_CACHE_IMPLEMENTATIONS,
+        DEPRECATED_STATIC_CACHE_IMPLEMENTATIONS,
+        STATIC_CACHE_IMPLEMENTATIONS,
+        GenerationConfig,
+        GenerationMode,
+    )
 except ImportError:
-    # 新版本transformers已删除
-    NEED_SETUP_CACHE_CLASSES_MAPPING = None
-try:
-    from transformers.generation.configuration_utils import QUANT_BACKEND_CLASSES_MAPPING
-except ImportError:
-    # 新版本transformers已删除
-    QUANT_BACKEND_CLASSES_MAPPING = None
+    # transformers < 5.0.0: static cache constants live elsewhere / are not exposed.
+    from transformers.generation.configuration_utils import (
+        GenerationConfig,
+        GenerationMode,
+    )
+
+    ALL_STATIC_CACHE_IMPLEMENTATIONS = ()
+    DEPRECATED_STATIC_CACHE_IMPLEMENTATIONS = ()
+    STATIC_CACHE_IMPLEMENTATIONS = ()
 
 from transformers.generation.logits_process import (
     EncoderNoRepeatNGramLogitsProcessor,
@@ -114,7 +118,6 @@ from transformers.generation.logits_process import (
     ExponentialDecayLengthPenalty,
     ForcedBOSTokenLogitsProcessor,
     ForcedEOSTokenLogitsProcessor,
-    HammingDiversityLogitsProcessor,
     InfNanRemoveLogitsProcessor,
     LogitNormalization,
     LogitsProcessorList,
@@ -134,6 +137,72 @@ from transformers.generation.logits_process import (
     TypicalLogitsWarper,
     UnbatchedClassifierFreeGuidanceLogitsProcessor,
 )
+try:
+    from transformers.generation.logits_process import HammingDiversityLogitsProcessor
+except ImportError:
+    # transformers >= 5.0.0 removed `HammingDiversityLogitsProcessor` (diverse beam search).
+    class HammingDiversityLogitsProcessor:
+        r"""
+        [`LogitsProcessor`] that enforces diverse beam search.
+
+        Note that this logits processor is only effective for [`PreTrainedModel.group_beam_search`]. See [Diverse Beam
+        Search: Decoding Diverse Solutions from Neural Sequence Models](https://huggingface.co/papers/1610.02424) for
+        more details.
+
+        Args:
+            diversity_penalty (`float`):
+                This value is subtracted from a beam's score if it generates a token same as any beam from other group
+                at a particular time.
+            num_beams (`int`):
+                Number of beams for beam search. 1 means no beam search.
+            num_beam_groups (`int`):
+                Number of groups to divide `num_beams` into in order to ensure diversity among different groups of
+                beams.
+        """
+
+        def __init__(self, diversity_penalty: float, num_beams: int, num_beam_groups: int):
+            if not isinstance(diversity_penalty, float) or (not diversity_penalty > 0.0):
+                raise ValueError("`diversity_penalty` should be a float strictly larger than 0.")
+            self._diversity_penalty = diversity_penalty
+            if not isinstance(num_beams, int) or num_beams < 2:
+                raise ValueError("`num_beams` should be an integer strictly larger than 1.")
+            self._num_beams = num_beams
+            if not isinstance(num_beam_groups, int) or num_beam_groups < 2:
+                raise ValueError("`num_beam_groups` should be an integer strictly larger than 1.")
+            if num_beam_groups > num_beams:
+                raise ValueError("`beam_groups` has to be smaller or equal to `num_beams`.")
+            self._num_sub_beams = num_beams // num_beam_groups
+
+        def __call__(
+            self,
+            input_ids: torch.LongTensor,
+            scores: torch.FloatTensor,
+            current_tokens: torch.LongTensor,
+            beam_group_idx: int,
+        ) -> torch.FloatTensor:
+            # hamming diversity: penalise using same token in current group which was used in previous groups at
+            # the same time step
+            batch_size = current_tokens.shape[0] // self._num_beams
+            group_start_idx = beam_group_idx * self._num_sub_beams
+            group_end_idx = min(group_start_idx + self._num_sub_beams, self._num_beams)
+            group_size = group_end_idx - group_start_idx
+            vocab_size = scores.shape[-1]
+
+            if group_start_idx == 0:
+                return scores
+
+            scores_processed = scores.clone()
+            for batch_idx in range(batch_size):
+                # predicted tokens of last time step of previous groups
+                previous_group_tokens = current_tokens[
+                    batch_idx * self._num_beams : batch_idx * self._num_beams + group_start_idx
+                ]
+                token_frequency = torch.bincount(previous_group_tokens, minlength=vocab_size).to(scores.device)
+                scores_processed[batch_idx * group_size : (batch_idx + 1) * group_size] -= (
+                    self._diversity_penalty * token_frequency
+                )
+
+            return scores_processed
 from transformers.generation.stopping_criteria import (
     ConfidenceCriteria,
     EosTokenCriteria,
@@ -623,10 +692,10 @@ class GenerationMixin:
             return default_attention_mask
 
         is_pad_token_in_inputs = (pad_token_id is not None) and (
-            isin_mps_friendly(elements=inputs, test_elements=pad_token_id).any()
+            torch.isin(elements=inputs, test_elements=pad_token_id).any()
         )
         is_pad_token_not_equal_to_eos_token_id = (eos_token_id is None) or ~(
-            isin_mps_friendly(elements=eos_token_id, test_elements=pad_token_id).any()
+            torch.isin(elements=eos_token_id, test_elements=pad_token_id).any()
         )
         can_infer_attention_mask = is_pad_token_in_inputs * is_pad_token_not_equal_to_eos_token_id
         attention_mask_from_padding = inputs.ne(pad_token_id).long()
@@ -1510,58 +1579,54 @@ class GenerationMixin:
         Prepares the base generation config, then applies any generation configuration options from kwargs. This
         function handles retrocompatibility with respect to configuration files.
         """
-        # TODO joao: when we can detect `fullgraph=True` in `torch.compile` (https://github.com/pytorch/pytorch/pull/120400)
-        # replace `is_torchdynamo_compiling` by the corresponding check. As it is, we are being too restrictive with
-        # the parameterization in `fullgraph=False` so as to enable `fullgraph=True`.
+        # parameterization priority:
+        # user-defined kwargs or `generation_config` > `self.generation_config` > global default values
+        # TODO (joao): per-model generation config classes.
 
-        # priority: `generation_config` argument > `model.generation_config` (the default generation config)
-        using_model_generation_config = False
+        generation_config_provided = generation_config is not None
         if generation_config is None:
-            # legacy: users may modify the model configuration to control generation. To trigger this legacy behavior,
-            # the following conditions must be met
-            # 1) the generation config must have been created from the model config (`_from_model_config` field);
-            # 2) the generation config must have seen no modification since its creation (the hash is the same);
-            # 3) there are non-default generation parameters in the model config.
-            # 4) the user must have set new generation parameters in the model config.
-            # NOTE: `torch.compile` can't compile `hash`, this legacy support is disabled with compilation.
-            if (
-                not is_torchdynamo_compiling()
-                and self.generation_config._from_model_config  # 1)
-                and self.generation_config._original_object_hash == hash(self.generation_config)  # 2)
-                and len(self.config._get_non_default_generation_parameters()) > 0  # 3)
-            ):
-                new_generation_config = GenerationConfig.from_model_config(self.config)
-                if new_generation_config != self.generation_config:  # 4)
-                    warnings.warn(
-                        "You have modified the pretrained model configuration to control generation. This is a"
-                        " deprecated strategy to control generation and will be removed in v5."
-                        " Please use and modify the model generation configuration (see"
-                        " https://huggingface.co/docs/transformers/generation_strategies#default-text-generation-configuration )",
-                        UserWarning,
-                    )
-                    self.generation_config = new_generation_config
+            # Users may modify `model.config` to control generation. This is a legacy behavior and is not supported anymore
+            if len(self.config._get_generation_parameters()) > 0:
+                raise ValueError(
+                    "You have modified the pretrained model configuration to control generation "
+                    f"We detected the following values set - {self.config._get_generation_parameters()}. "
+                    "This strategy to control generation is not supported anymore. Please use and modify `model.generation_config` "
+                    "(see https://huggingface.co/docs/transformers/generation_strategies#default-text-generation-configuration )",
+                )
+            generation_config = GenerationConfig()
 
-            generation_config = self.generation_config
-            using_model_generation_config = True
+        # `torch.export.export` usually raises an exception if it is called
+        # with ``strict=True``. deepcopy can only be processed if ``strict=False``.
+        generation_config = copy.deepcopy(generation_config)
 
-        # `torch.compile` can't compile `copy.deepcopy`, arguments in `kwargs` that are part of `generation_config`
-        # will mutate the object with `.update`. As such, passing these arguments through `kwargs` is disabled -- an
-        # exception will be raised in `_validate_model_kwargs`
-        if not is_torchdynamo_compiling():
-            generation_config = copy.deepcopy(generation_config)
-            model_kwargs = generation_config.update(**kwargs)
-            # If `generation_config` is provided, let's fallback ALL special tokens to the default values for the model
-            if not using_model_generation_config:
-                if generation_config.bos_token_id is None:
-                    generation_config.bos_token_id = self.generation_config.bos_token_id
-                if generation_config.eos_token_id is None:
-                    generation_config.eos_token_id = self.generation_config.eos_token_id
-                if generation_config.pad_token_id is None:
-                    generation_config.pad_token_id = self.generation_config.pad_token_id
-                if generation_config.decoder_start_token_id is None:
-                    generation_config.decoder_start_token_id = self.generation_config.decoder_start_token_id
-        else:
-            model_kwargs = kwargs
+        # First set values from the loaded `self.generation_config`, then set default values (BC)
+        #
+        # Only update values that are `None`, i.e. these values were not explicitly set by users to `generate()`,
+        # or values that are not present in the current config, i.e. custom entries that were set via `**kwargs`.
+        # Thus we use the specific kwargs `defaults_only=True` (`None` values only) and `allow_custom_entries=True`
+        # (custom entries are carried over).
+        global_defaults = self.generation_config._get_default_generation_params()
+        generation_config.update(**self.generation_config.to_dict(), defaults_only=True, allow_custom_entries=True)
+        generation_config.update(**global_defaults, defaults_only=True)
+
+        # Finally, if there are any kwargs, update config with it -> highest priority at the end
+        model_kwargs = generation_config.update(**kwargs)
+
+        # It doesn't make sense to allow kwargs and `generation_config`, that should be mutually exclusive
+        if generation_config_provided and set(kwargs.keys()) - set(model_kwargs.keys()):
+            generation_kwargs = set(kwargs.keys()) - set(model_kwargs.keys())
+            logger.warning_once(
+                f"Passing `generation_config` together with generation-related "
+                f"arguments=({generation_kwargs}) is deprecated and will be removed in future versions. "
+                "Please pass either a `generation_config` object OR all generation "
+                "parameters explicitly, but not both.",
+            )
+
+        # Finally keep output_xxx args in `model_kwargs` so it can be passed to `forward`
+        output_attentions = generation_config.output_attentions
+        output_hidden_states = generation_config.output_hidden_states
+        model_kwargs.update({"output_attentions": output_attentions} if output_attentions else {})
+        model_kwargs.update({"output_hidden_states": output_hidden_states} if output_hidden_states else {})
 
         return generation_config, model_kwargs
 
@@ -1594,97 +1659,6 @@ class GenerationMixin:
         model_kwargs["cache_position"] = cache_position
         return model_kwargs
 
-    def _get_cache(
-        self, cache_implementation: str, batch_size: int, max_cache_len: int, device: torch.device, model_kwargs
-    ) -> Cache:
-        """
-        Sets a cache for `generate`, that will persist across calls. A new cache will only be initialized a
-        new `generate` call requires a larger cache or uses a different batch size.
-
-        Returns the resulting cache object.
-        """
-        cache_cls: Cache = NEED_SETUP_CACHE_CLASSES_MAPPING[cache_implementation]
-        requires_cross_attention_cache = (
-            self.config.is_encoder_decoder or model_kwargs.get("encoder_outputs") is not None
-        )
-
-        if hasattr(self, "_cache"):
-            cache_to_check = self._cache.self_attention_cache if requires_cross_attention_cache else self._cache
-
-        if cache_implementation == "sliding_window":
-            max_cache_len = min(self.config.sliding_window, max_cache_len)
-
-        need_new_cache = (
-            not hasattr(self, "_cache")
-            or (not isinstance(cache_to_check, cache_cls))
-            or cache_to_check.batch_size != batch_size
-        )
-        if cache_implementation != "mamba":
-            need_new_cache = need_new_cache or cache_to_check.max_cache_len < max_cache_len
-
-        if requires_cross_attention_cache and hasattr(self, "_cache"):
-            need_new_cache = (
-                need_new_cache
-                or self._cache.cross_attention_cache.max_cache_len != model_kwargs["encoder_outputs"][0].shape[1]
-            )
-
-        if need_new_cache:
-            if hasattr(self.config, "_pre_quantization_dtype"):
-                cache_dtype = self.config._pre_quantization_dtype
-            else:
-                if not is_torchdynamo_compiling():
-                    cache_dtype = self.dtype
-                else:
-                    # NOTE: self.dtype is not compatible with torch.compile, as it calls `self.parameters()`.
-                    # Workaround: trust the lm_head, whose attribute name is somewhat consistent across generative
-                    # models. May cause trobles with non-text modalities.
-                    cache_dtype = self.get_output_embeddings().weight.dtype
-
-            def get_layer_device_map(execution_device_map: Optional[dict] = None):
-                if execution_device_map is None:
-                    return None
-                elif len(execution_device_map) == 1 and "" in execution_device_map:
-                    return {idx: execution_device_map[""] for idx in range(self.config.num_hidden_layers)}
-                layer_device_map = {}
-                for layer in execution_device_map:
-                    for idx in range(self.config.num_hidden_layers):
-                        if f".{idx}." in f"{layer}.":
-                            layer_device_map[idx] = execution_device_map[layer]
-                            break
-                for idx in range(self.config.num_hidden_layers):
-                    if idx not in layer_device_map:
-                        raise RuntimeError(f"layer {idx} has not been mapped to a device.")
-                return layer_device_map
-
-            execution_device_map = None
-            # Taken from dispatch_model from accelerate.
-            # This is needed here if we don't want to make changes in accelerate in order to save execution_device
-            # For offloaded case, we need to get the execution device, not just the device where it is offloaded
-            if hasattr(self, "hf_device_map"):
-                main_device = [d for d in self.hf_device_map.values() if d not in ["cpu", "disk"]][0]
-                execution_device_map = {
-                    name: main_device if device in ["cpu", "disk"] else device
-                    for name, device in self.hf_device_map.items()
-                }
-            layer_device_map = get_layer_device_map(execution_device_map)
-
-            cache_kwargs = {
-                "config": self.config.get_text_config(),
-                "batch_size": batch_size,
-                "max_cache_len": max_cache_len,
-                "device": device,
-                "dtype": cache_dtype,
-                "layer_device_map": layer_device_map,
-            }
-            self._cache = cache_cls(**cache_kwargs)
-            if requires_cross_attention_cache:
-                encoder_kwargs = cache_kwargs.copy()
-                encoder_kwargs["max_cache_len"] = model_kwargs["encoder_outputs"][0].shape[1]
-                self._cache = EncoderDecoderCache(self._cache, cache_cls(**encoder_kwargs))
-        else:
-            self._cache.reset()
-        return self._cache
-
     def _supports_default_dynamic_cache(self) -> bool:
         """
         Return `True` if current model can use a `DynamicCache` instance when initializing the `past_key_values`.
@@ -1699,28 +1673,93 @@ class GenerationMixin:
             and "zamba" not in self.__class__.__name__.lower()
         )
 
+    def _get_static_cache_init_shape(self) -> Optional[Tuple[int, int]]:
+        """
+        Returns the per-rank `(num_heads, head_dim)` to eagerly initialize a `StaticCache`, with the head count sharded
+        for tensor parallelism. Returns `None` when the cache cannot be early initialized.
+        """
+        if hasattr(self, "hf_device_map") and len(set(self.hf_device_map.values())) > 1:
+            # The model layers are on different devices
+            return None
+        text_config = self.config.get_text_config(decoder=True)
+        tp_size = getattr(self, "_tp_size", None) or 1
+        num_key_value_heads = getattr(text_config, "num_key_value_heads", None) or text_config.num_attention_heads
+        if num_key_value_heads % tp_size != 0:
+            # The model cannot be evenly sharded by head
+            return None
+        if getattr(text_config, "qk_head_dim", None) is not None:
+            # MLA models have distinct key (`qk_head_dim`) and value (`v_head_dim`) sizes.
+            return None
+        head_dim = getattr(text_config, "head_dim", None) or text_config.hidden_size // text_config.num_attention_heads
+        return num_key_value_heads // tp_size, head_dim
+
+    def _prepare_static_cache(
+        self,
+        cache_implementation: str,
+        batch_size: int,
+        max_cache_len: int,
+        prefill_chunk_size: Optional[int],
+        model_kwargs,
+    ) -> Cache:
+        """
+        Create a static cache for `generate`. To avoid recompilation, the new cache will use the maximum between the
+        current `max_cache_len` and the potential previous value of `max_cache_len`, if there was some previous
+        `generate` calls with static cache.
+        """
+        offload_cache = "offloaded" in cache_implementation
+        previous_max_len = getattr(self, "_previous_max_cache_length", -1)
+        effective_length = max(max_cache_len, previous_max_len)
+
+        self_attention_cache_kwargs = {
+            "config": self.config.get_text_config(decoder=True),
+            "max_cache_len": effective_length,
+            "offloading": offload_cache,
+        }
+        cache = StaticCache(**self_attention_cache_kwargs)
+        if self.config.is_encoder_decoder:
+            cross_attention_cache_kwargs = {
+                "config": self.config.get_text_config(decoder=True),
+                "max_cache_len": model_kwargs["encoder_outputs"][0].shape[1],
+                "offloading": offload_cache,
+            }
+            cache = EncoderDecoderCache(cache, StaticCache(**cross_attention_cache_kwargs))
+        elif prefill_chunk_size is not None:
+            # Chunked prefill compiles the prefill, so eagerly init the fresh cache to avoid a recompile next call
+            # (#46421). Skipped (-> lazy init) when it can't be initialized on a single device.
+            init_shape = self._get_static_cache_init_shape()
+            if init_shape is not None:
+                num_heads, head_dim = init_shape
+                cache.early_initialization(
+                    batch_size=batch_size,
+                    num_heads=num_heads,
+                    head_dim=head_dim,
+                    dtype=self.dtype,
+                    device=self.device,
+                )
+
+        # Set the current length on the current model, to avoid recompilation later if we can
+        self._previous_max_cache_length = effective_length
+
+        return cache
+
     def _prepare_cache_for_generation(
         self,
         generation_config: GenerationConfig,
         model_kwargs: Dict,
-        assistant_model: "PreTrainedModel",
+        generation_mode: GenerationMode,
         batch_size: int,
         max_cache_length: int,
-        device: torch.device,
     ) -> bool:
         """
         Prepares the cache for generation (if applicable), given `generate`'s parameterization. If a cache is
         instantiated, writes it to `model_kwargs`, under the name expected by the model.
         """
 
-        cache_name = "past_key_values" if "mamba" not in self.__class__.__name__.lower() else "cache_params"
-        requires_cross_attention_cache = (
-            self.config.is_encoder_decoder or model_kwargs.get("encoder_outputs") is not None
-        )
+        # TODO @raushan, unify cache arg naming for all models
+        is_linear_attn_cache = "mamba" in self.__class__.__name__.lower()
+        cache_name = "past_key_values" if not is_linear_attn_cache else "cache_params"
 
-        # Quick escape route 1: if the user specifies a cache, we only need to:
-        # a) check for conflicting `generate` arguments
-        # b) convert to the new cache format (if the user passes a legacy cache and model supports it)
+        # Quick escape route 1: if the user specifies a cache, we only need to check for conflicting `generate` arguments
         user_defined_cache = model_kwargs.get(cache_name)
         if user_defined_cache is not None:
             if generation_config.cache_implementation is not None:
@@ -1728,11 +1767,9 @@ class GenerationMixin:
                     f"Passing both `cache_implementation` (used to initialize certain caches) and `{cache_name}` (a "
                     "Cache object) is unsupported. Please use only one of the two."
                 )
-            if isinstance(user_defined_cache, tuple) and self._supports_default_dynamic_cache():
-                model_kwargs[cache_name] = (
-                    DynamicCache.from_legacy_cache(user_defined_cache)
-                    if not requires_cross_attention_cache
-                    else EncoderDecoderCache.from_legacy_cache(user_defined_cache)
+            if isinstance(user_defined_cache, tuple):
+                raise ValueError(
+                    "Passing a tuple of `past_key_values` is not supported anymore. Please use a `Cache` instance."
                 )
             return
 
@@ -1741,80 +1778,70 @@ class GenerationMixin:
         if generation_config.use_cache is False:
             return
 
-        # Quick escape route 3: model that only supports legacy caches = nothing to prepare
+        # Quick escape route 3: model that supply it in `prepare_inputs_for_generation` (mamba, zamba, ...)
         if not self._supports_default_dynamic_cache():
             if generation_config.cache_implementation is not None:
-                warnings.warn(
-                    "This model does not support `Cache` instances, it only supports the legacy cache format (tuple "
-                    f"of tuples). `cache_implementation` (set to {generation_config.cache_implementation}) will be "
-                    "ignored.",
-                    UserWarning,
+                logger.warning_once(
+                    "This model does not support `Cache` instances. `cache_implementation` (set to "
+                    f"{generation_config.cache_implementation}) will be ignored.",
                 )
             return
 
         # Otherwise we NEED to prepare a cache, based on `generation_config.cache_implementation`
+        dynamic_cache_kwargs = {"config": self.config.get_text_config(decoder=True)}
 
-        # TODO(joao): support static caches in assisted generation. assisted generation needs to roll back caches,
-        # which is only supported in dynamic caches atm
-        if assistant_model is not None and generation_config.cache_implementation is not None:
-            logger.warning_once(
-                "An assistant model is provided, using a dynamic cache instead of a cache of type="
-                f"'{generation_config.cache_implementation}'."
+        if generation_config.cache_implementation == "offloaded":
+            dynamic_cache_kwargs["offloading"] = True
+
+        if generation_config.cache_implementation in ALL_STATIC_CACHE_IMPLEMENTATIONS:
+            if generation_config.cache_implementation in DEPRECATED_STATIC_CACHE_IMPLEMENTATIONS:
+                logger.warning_once(
+                    f"Using `cache_implementation='{generation_config.cache_implementation}'` is deprecated "
+                    f"and will be removed in v5.13. Please only use one of {STATIC_CACHE_IMPLEMENTATIONS}, "
+                    "and the layer structure will be inferred automatically."
+                )
+            # `max_cache_len` lets the static cache be sized for the worst case across calls, so that later calls
+            # with a longer prompt or a larger `max_new_tokens` (up to that ceiling) reuse the same cache instead of
+            # triggering a reallocation (and a `torch.compile` recompilation). Without it, the cache is sized to the
+            # current call's `max_length` only. See #46424.
+            if generation_config.max_cache_len is not None:
+                max_cache_length = max(max_cache_length, generation_config.max_cache_len)
+            cache_batch_size = max(generation_config.num_beams, generation_config.num_return_sequences) * batch_size
+            model_kwargs[cache_name] = self._prepare_static_cache(
+                cache_implementation=generation_config.cache_implementation,
+                batch_size=cache_batch_size,
+                max_cache_len=max_cache_length,
+                prefill_chunk_size=generation_config.prefill_chunk_size,
+                model_kwargs=model_kwargs,
             )
-            generation_config.cache_implementation = None
-
-        if generation_config.cache_implementation is not None:
-            if generation_config.cache_implementation in NEED_SETUP_CACHE_CLASSES_MAPPING:
-                if generation_config.cache_implementation == "static" and not self._supports_static_cache:
-                    raise ValueError(
-                        "This model does not support `cache_implementation='static'`. Please check the following "
-                        "issue: https://github.com/huggingface/transformers/issues/28981"
-                    )
-                model_kwargs[cache_name] = self._get_cache(
-                    cache_implementation=generation_config.cache_implementation,
-                    batch_size=max(generation_config.num_beams, generation_config.num_return_sequences) * batch_size,
-                    max_cache_len=max_cache_length,
-                    device=device,
-                    model_kwargs=model_kwargs,
+        elif generation_config.cache_implementation == "quantized":
+            if self.config.is_encoder_decoder or not self._supports_default_dynamic_cache():
+                raise ValueError(
+                    "This model does not support the quantized cache. If you want your model to support quantized "
+                    "cache, please open an issue and tag @zucchini-nlp."
                 )
-            elif generation_config.cache_implementation == "quantized":
-                if not self._supports_quantized_cache:
-                    raise ValueError(
-                        "This model does not support the quantized cache. If you want your model to support quantized "
-                        "cache, please open an issue and tag @zucchini-nlp."
-                    )
 
-                cache_config = (
-                    generation_config.cache_config
-                    if generation_config.cache_config is not None
-                    else QuantizedCacheConfig()
-                )
-                cache_class = QUANT_BACKEND_CLASSES_MAPPING[cache_config.backend]
-
-                # if cache_config.backend == "quanto" and not (is_optimum_quanto_available() or is_quanto_available()):
-                if cache_config.backend == "quanto" and not is_optimum_quanto_available():
-                    raise ImportError(
-                        "You need to install optimum-quanto in order to use KV cache quantization with optimum-quanto backend. "
-                        "Please install it via  with `pip install optimum-quanto`"
-                    )
-                elif cache_config.backend == "HQQ" and not is_hqq_available():
-                    raise ImportError(
-                        "You need to install `HQQ` in order to use KV cache quantization with HQQ backend. "
-                        "Please install it via  with `pip install hqq`"
-                    )
-
-                model_kwargs[cache_name] = cache_class(cache_config)
-            elif generation_config.cache_implementation == "offloaded":
-                model_kwargs[cache_name] = OffloadedCache()
-
-        # Use DynamicCache() instance by default. This will avoid back and forth from legacy format that
-        # keeps copying the cache thus using much more memory
+            cache_config = generation_config.cache_config if generation_config.cache_config is not None else {}
+            cache_config.setdefault("config", self.config.get_text_config(decoder=True))
+            backend = cache_config.pop("backend", "quanto")
+            model_kwargs[cache_name] = QuantizedCache(backend=backend, **cache_config)
+        # i.e. `cache_implementation` in [None, "dynamic", "offloaded"]
         else:
-            model_kwargs[cache_name] = (
-                DynamicCache()
-                if not requires_cross_attention_cache
-                else EncoderDecoderCache(DynamicCache(), DynamicCache())
+            model_kwargs[cache_name] = DynamicCache(**dynamic_cache_kwargs)
+
+        if (
+            self.config.is_encoder_decoder
+            and cache_name in model_kwargs
+            and not isinstance(model_kwargs[cache_name], EncoderDecoderCache)
+        ):
+            model_kwargs[cache_name] = EncoderDecoderCache(
+                model_kwargs[cache_name],  # self-attention cache
+                DynamicCache(**dynamic_cache_kwargs),  # cross-attention cache
             )
+
+        # If we just created a cache for an assistant model, mark it for past recording, as we will need to rollback it
+        if generation_config.is_assistant:
+            model_kwargs[cache_name].activate_past_recording()
 
     def _supports_num_logits_to_keep(self) -> bool:
         """
@@ -1882,7 +1909,7 @@ class GenerationMixin:
         if not is_torchdynamo_compiling():  # Checks that depend on tensor-dependent control flow
             if (
                 eos_token_tensor is not None
-                and isin_mps_friendly(elements=eos_token_tensor, test_elements=pad_token_tensor).any()
+                and torch.isin(elements=eos_token_tensor, test_elements=pad_token_tensor).any()
             ):
                 if kwargs_has_attention_mask is not None and not kwargs_has_attention_mask:
                     logger.warning_once(
@@ -2114,22 +2141,19 @@ class GenerationMixin:
         # - `model_kwargs` may be updated in place with a cache as defined by the parameters in `generation_config`.
         # - different models have a different cache name expected by the model (default = "past_key_values")
         # - `max_length`, prepared above, is used to determine the maximum cache length
-        # TODO (joao): remove `user_defined_cache` after v4.47 (remove default conversion to legacy format)
-        cache_name = "past_key_values" if "mamba" not in self.__class__.__name__.lower() else "cache_params"
-        user_defined_cache = model_kwargs.get(cache_name)
-        max_cache_length = generation_config.max_length
+        max_cache_length = generation_config.max_length - 1
         if (
             inputs_tensor.shape[1] != input_ids_length
             and model_input_name == "inputs_embeds"
             and not self.config.is_encoder_decoder
         ):
             max_cache_length += inputs_tensor.shape[1]
-        self._prepare_cache_for_generation(
-            generation_config, model_kwargs, assistant_model, batch_size, max_cache_length, device
-        )
-
         # 8. determine generation mode
         generation_mode = generation_config.get_generation_mode(assistant_model)
+
+        self._prepare_cache_for_generation(
+            generation_config, model_kwargs, generation_mode, batch_size, max_cache_length
+        )
 
         if streamer is not None and (generation_config.num_beams > 1):
             raise ValueError(
@@ -2396,34 +2420,6 @@ class GenerationMixin:
                 **model_kwargs,
             )
 
-        # Convert to legacy cache format if requested
-        if (
-            generation_config.return_legacy_cache is not False  # Should check for `True` after v4.47
-            and not is_torchdynamo_compiling()
-            and hasattr(result, "past_key_values")
-            and hasattr(result.past_key_values, "to_legacy_cache")
-            and result.past_key_values.to_legacy_cache is not None
-        ):
-            # handle BC (convert by default if he user hasn't passed a cache AND the cache is of the default type)
-            should_convert_cache = generation_config.return_legacy_cache
-            is_user_defined_cache = user_defined_cache is not None
-            is_default_cache_type = (
-                type(result.past_key_values) == DynamicCache  # noqa E721
-                or (
-                    isinstance(result.past_key_values, EncoderDecoderCache)
-                    and type(result.past_key_values.self_attention_cache) == DynamicCache  # noqa E721
-                    and type(result.past_key_values.cross_attention_cache) == DynamicCache  # noqa E721
-                )
-            )
-            if not is_user_defined_cache and is_default_cache_type:
-                logger.warning_once(
-                    "From v4.47 onwards, when a model cache is to be returned, `generate` will return a `Cache` "
-                    "instance instead by default (as opposed to the legacy tuple of tuples format). If you want to "
-                    "keep returning the legacy format, please set `return_legacy_cache=True`."
-                )
-                should_convert_cache = True
-            if should_convert_cache:
-                result.past_key_values = result.past_key_values.to_legacy_cache()
         return result
 
     def _has_unfinished_sequences(
