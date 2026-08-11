@@ -53,12 +53,14 @@ from transformers.loss.loss_utils import LOSS_MAPPING
 from transformers.pytorch_utils import (  # noqa: F401
     Conv1D,
     apply_chunking_to_forward,
-    find_pruneable_heads_and_indices,
     id_tensor_storage,
     is_torch_greater_or_equal_than_1_13,
+    prune_linear_layer,
+)
+from indextts.gpt.pytorch_utils_fallback import (  # noqa: F401
+    find_pruneable_heads_and_indices,
     prune_conv1d_layer,
     prune_layer,
-    prune_linear_layer,
 )
 from transformers.quantizers import AutoHfQuantizer, HfQuantizer
 from transformers.quantizers.quantizers_utils import get_module_from_name
@@ -69,11 +71,8 @@ from transformers.utils import (
     ADAPTER_WEIGHTS_NAME,
     CONFIG_NAME,
     DUMMY_INPUTS,
-    FLAX_WEIGHTS_NAME,
     SAFE_WEIGHTS_INDEX_NAME,
     SAFE_WEIGHTS_NAME,
-    TF2_WEIGHTS_NAME,
-    TF_WEIGHTS_NAME,
     WEIGHTS_INDEX_NAME,
     WEIGHTS_NAME,
     ContextManagers,
@@ -81,21 +80,26 @@ from transformers.utils import (
     PushToHubMixin,
     cached_file,
     copy_func,
-    download_url,
     extract_commit_hash,
     has_file,
     is_accelerate_available,
     is_bitsandbytes_available,
     is_flash_attn_2_available,
-    is_offline_mode,
     is_optimum_available,
     is_peft_available,
-    is_remote_url,
-    is_safetensors_available,
     is_torch_xla_available,
     logging,
     replace_return_docstrings,
     strtobool,
+)
+from indextts.gpt.utils_fallback import (
+    FLAX_WEIGHTS_NAME,
+    TF2_WEIGHTS_NAME,
+    TF_WEIGHTS_NAME,
+    download_url,
+    is_offline_mode,
+    is_remote_url,
+    is_safetensors_available,
 )
 from transformers.utils.hub import convert_file_size_to_int, create_and_tag_model_card, get_checkpoint_shard_files
 from transformers.utils.import_utils import (
