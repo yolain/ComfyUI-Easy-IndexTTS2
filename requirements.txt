@@ -7,7 +7,7 @@ PyYAML>=6.0
 pynini==2.1.6; platform_system!="Windows"
 WeTextProcessing>=1.0.3; platform_system!="Windows"
 omegaconf>=2.3.0
-transformers>=4.50.0
+transformers>=5.0.0
 huggingface_hub>=0.23.0
 safetensors>=0.4.2
 torchaudio>=2.0.0

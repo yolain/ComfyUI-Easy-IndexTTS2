@@ -92,7 +92,6 @@ from transformers.utils import (
     is_peft_available,
     is_remote_url,
     is_safetensors_available,
-    is_torch_sdpa_available,
     is_torch_xla_available,
     logging,
     replace_return_docstrings,
@@ -1830,12 +1829,8 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMix
                     " Please request the support for this architecture: https://github.com/huggingface/transformers/issues/28005. If you believe"
                     ' this error is a bug, please open an issue in Transformers GitHub repository and load your model with the argument `attn_implementation="eager"` meanwhile. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="eager")`'
                 )
-            if not is_torch_sdpa_available():
-                raise ImportError(
-                    "PyTorch SDPA requirements in Transformers are not met. Please install torch>=2.1.1."
-                )
 
-        if not is_torch_sdpa_available() or not cls._supports_sdpa:
+        if not cls._supports_sdpa:
             return config
 
         _is_bettertransformer = getattr(cls, "use_bettertransformer", False)
